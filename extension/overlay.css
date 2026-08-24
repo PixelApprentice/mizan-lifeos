@@ -1,0 +1,96 @@
+#mizan-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, 0.96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: system-ui, sans-serif;
+}
+.mizan-card {
+  width: min(560px, 92vw);
+  background: #0a0a0c;
+  border: 1px solid #1f1f24;
+  border-radius: 16px;
+  padding: 28px;
+  color: #e7e7ea;
+}
+.mizan-card h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  color: #34d399;
+}
+.mizan-sub {
+  margin: 0 0 8px;
+  color: #8b8b93;
+  font-size: 13px;
+}
+.mizan-tasks {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.mizan-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #111114;
+  border: 1px solid #1f1f24;
+  border-radius: 10px;
+  color: #e7e7ea;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+}
+.mizan-input:focus {
+  border-color: #34d399;
+}
+.mizan-input.mizan-bad {
+  border-color: #f87171;
+}
+.mizan-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.mizan-btn {
+  background: #34d399;
+  color: #000;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.mizan-btn-ghost {
+  background: transparent;
+  color: #8b8b93;
+  border: 1px solid #1f1f24;
+}
+.mizan-foot {
+  margin: 14px 0 0;
+  font-size: 11px;
+  color: #8b8b93;
+}
+.mizan-plan {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.mizan-plan li {
+  color: #8b8b93;
+}
+.mizan-plan li.mizan-now {
+  color: #34d399;
+  font-weight: 600;
+}
+.mizan-time {
+  display: inline-block;
+  min-width: 150px;
+  font-variant-numeric: tabular-nums;
+  color: #5b5b63;
+}

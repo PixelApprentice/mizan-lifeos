@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <!-- Install: sudo install -o root -g root -m 644 helper/com.salahudin.mizan.hostsblock.policy \
+       /usr/share/polkit-1/actions/com.salahudin.mizan.hostsblock.policy -->
+  <action id="com.salahudin.mizan.hostsblock">
+    <description>Toggle Mizan deep-mode website block in /etc/hosts</description>
+    <message>Mizan deep-mode site block</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <!-- No password: session start/end must never stall on an expired auth prompt.
+           The helper only writes its own marked section with validated domains. -->
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/mizan-hosts</annotate>
+  </action>
+  <action id="com.salahudin.mizan.hostsblock.perm">
+    <description>Change Mizan permanent (purity shield) website block in /etc/hosts</description>
+    <message>Mizan wants to change the PERMANENT site block</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <!-- Password required: adding or removing the purity shield is meant to hurt a little. -->
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/mizan-hosts-perm</annotate>
+  </action>
+</policyconfig>

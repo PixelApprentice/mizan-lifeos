@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "Mizan Guard",
+  "version": "1.2",
+  "description": "Personal discipline guard: YouTube intention gate, Shorts block, deep-mode site blocking. Talks to the Mizan desktop app.",
+  "permissions": ["webRequest", "webRequestBlocking", "nativeMessaging", "storage", "<all_urls>"],
+  "background": { "scripts": ["background.js"] },
+  "web_accessible_resources": ["blocked.html"],
+  "content_scripts": [
+    {
+      "matches": ["*://www.youtube.com/*", "*://youtube.com/*", "*://m.youtube.com/*"],
+      "js": ["content-youtube.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_start"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": { "id": "mizan-guard@salahudin.local", "strict_min_version": "115.0" }
+  }
+}

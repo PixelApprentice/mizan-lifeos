@@ -1,0 +1,46 @@
+{
+  "name": "mizan",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "node --test src/lib/*.test.mjs",
+    "check:privacy": "python3 scripts/check-private-data.py",
+    "test:privacy": "python3 -m unittest discover -s scripts -p 'test_*.py'"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
+    "@fontsource/vt323": "^5.3.0",
+    "@fullcalendar/core": "^6.1.21",
+    "@fullcalendar/daygrid": "~6.1.15",
+    "@fullcalendar/interaction": "~6.1.15",
+    "@fullcalendar/react": "^6.1.21",
+    "@fullcalendar/timegrid": "~6.1.15",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-notification": "^2.4.0",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-shell": "^2.3.6",
+    "@tauri-apps/plugin-sql": "^2.4.1",
+    "pixelarticons": "^2.4.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "playwright-core": "^1.63.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}

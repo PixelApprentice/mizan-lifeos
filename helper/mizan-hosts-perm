@@ -1,0 +1,45 @@
+#!/bin/sh
+# mizan-hosts-perm — root helper: manage the PERMANENT (purity shield) block section in /etc/hosts.
+# Install: sudo install -o root -g root -m 755 helper/mizan-hosts-perm /usr/local/bin/mizan-hosts-perm
+# Polkit: auth_admin_keep — applying or removing the permanent list asks for the password.
+# That friction is deliberate.
+#
+#   mizan-hosts-perm perm-file <path>  permanent section = domains read from file (one per line)
+#   mizan-hosts-perm perm-off          permanent section off
+set -eu
+
+HOSTS="${MIZAN_HOSTS_FILE:-/etc/hosts}"
+PBEGIN="# MIZAN-PERM-BEGIN"
+PEND="# MIZAN-PERM-END"
+
+strip() {
+    tmp=$(mktemp)
+    sed "/^$PBEGIN$/,/^$PEND$/d" "$HOSTS" > "$tmp"
+    cat "$tmp" > "$HOSTS"
+    rm -f "$tmp"
+}
+
+case "${1:-}" in
+    perm-file)
+        FILE="${2:?usage: mizan-hosts-perm perm-file <path>}"
+        [ -r "$FILE" ] || { echo "cannot read $FILE" >&2; exit 1; }
+        strip
+        {
+            echo "$PBEGIN"
+            while IFS= read -r site; do
+                case "$site" in
+                    *[!a-zA-Z0-9.-]*|'') continue ;;
+                esac
+                printf '0.0.0.0 %s\n' "$site"
+            done < "$FILE"
+            echo "$PEND"
+        } >> "$HOSTS"
+        ;;
+    perm-off)
+        strip
+        ;;
+    *)
+        echo "usage: mizan-hosts-perm perm-file <path> | perm-off" >&2
+        exit 1
+        ;;
+esac

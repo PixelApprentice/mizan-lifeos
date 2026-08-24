@@ -1,0 +1,67 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Personal runtime data must never enter the template repository.
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.jsonl
+lifeos.json
+focus.json
+tracker.csv
+!templates/tracker.csv
+log/
+data/
+private/
+exports/
+backups/
+backup-*/
+screenshots/
+recordings/
+**/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md
+
+# Credentials and machine-specific configuration.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*
+secrets*
+*.local.json
+
+# Generated output and caches.
+__pycache__/
+*.pyc
+*.pyo
+target/
+test-results/
+playwright-report/
+*.tsbuildinfo

@@ -1,0 +1,46 @@
+#!/bin/sh
+# mizan-hosts — root helper: toggle the DEEP-MODE block section in /etc/hosts.
+# Install: sudo install -o root -g root -m 755 helper/mizan-hosts /usr/local/bin/mizan-hosts
+# Called via pkexec by the Mizan app. Only touches its own marked section.
+# Polkit: allow_active=yes (no password) — starting/ending focus sessions must be frictionless,
+# otherwise expired auth prompts break session restarts. The PERMANENT list lives in
+# mizan-hosts-perm, which keeps password friction on purpose.
+#
+#   mizan-hosts on <domain>...    deep-mode section on (argv domains)
+#   mizan-hosts off               deep-mode section off
+set -eu
+
+HOSTS="${MIZAN_HOSTS_FILE:-/etc/hosts}"
+BEGIN="# MIZAN-BEGIN"
+END="# MIZAN-END"
+
+strip() {
+    tmp=$(mktemp)
+    sed "/^$BEGIN$/,/^$END$/d" "$HOSTS" > "$tmp"
+    cat "$tmp" > "$HOSTS"
+    rm -f "$tmp"
+}
+
+case "${1:-}" in
+    on)
+        shift
+        strip
+        {
+            echo "$BEGIN"
+            for site in "$@"; do
+                case "$site" in
+                    *[!a-zA-Z0-9.-]*|'') continue ;;
+                esac
+                printf '0.0.0.0 %s\n' "$site"
+            done
+            echo "$END"
+        } >> "$HOSTS"
+        ;;
+    off)
+        strip
+        ;;
+    *)
+        echo "usage: mizan-hosts on <domain>... | off" >&2
+        exit 1
+        ;;
+esac
