@@ -253,7 +253,9 @@ pub fn focus_start(
     if !(5..=480).contains(&minutes) {
         return Err("Session length must be 5–480 minutes.".into());
     }
-    hosts_helper("on", &sites)?;
+    if !sites.is_empty() {
+        hosts_helper("on", &sites)?;
+    }
     let now = Local::now();
     let state = FocusState {
         started_at: now.to_rfc3339(),
