@@ -275,6 +275,10 @@ interface DbLike {
 // Demo mode only needs settings here; tasks/projects/events go through lib/data.ts.
 const fakeDb: DbLike = {
   async select<T>(q: string, params: unknown[] = []): Promise<T> {
+    if (q.includes("key LIKE")) {
+      const prefix = String(params[0]).slice(0, -1);
+      return [...demo.settings].filter(([key]) => key.startsWith(prefix)).map(([key, value]) => ({ key, value })) as T;
+    }
     if (q.includes("FROM settings")) {
       const v = demo.settings.get(String(params[0]));
       return (v !== undefined ? [{ value: v }] : []) as T;
@@ -282,6 +286,7 @@ const fakeDb: DbLike = {
     return [] as T;
   },
   async execute(q: string, params: unknown[] = []): Promise<unknown> {
+    if (q.startsWith("DELETE FROM settings")) demo.settings.delete(String(params[0]));
     if (q.startsWith("INSERT INTO settings")) {
       demo.settings.set(String(params[0]), String(params[1]));
     }
@@ -308,6 +313,15 @@ export async function setSetting(key: string, value: string): Promise<void> {
     "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $2",
     [key, value],
   );
+}
+
+export async function listSettings(prefix: string): Promise<{ key: string; value: string }[]> {
+  if (!/^[a-z]+:$/.test(prefix)) throw new Error("Invalid settings namespace.");
+  return (await db()).select<{ key: string; value: string }[]>("SELECT key, value FROM settings WHERE key LIKE $1 ORDER BY key", [`${prefix}%`]);
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  await (await db()).execute("DELETE FROM settings WHERE key=$1", [key]);
 }
 
 // Every disc-touching command passes the configured path so Settings actually governs it.

@@ -19,6 +19,7 @@ import Palette from "./components/Palette";
 import Modal, { type ModalRequest } from "./components/Modal";
 import { Hearts, Logo } from "./components/Pixel";
 import { flushBeforeExit } from "./lib/unsaved";
+import QuickCapture from "./components/QuickCapture";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface NavItem {
@@ -61,6 +62,19 @@ export default function App() {
   const [streak, setStreak] = useState(0);
   const [todayScore, setTodayScore] = useState<number | null>(null);
   const [modal, setModal] = useState<ModalRequest | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [notice, setNotice] = useState("");
+  const openCapture = useCallback(() => { setNavOpen(false); setCaptureOpen(true); }, []);
+
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "k" && !document.querySelector('[role="dialog"]')) {
+        event.preventDefault(); openCapture();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [openCapture]);
 
   useEffect(() => {
     const tick = () => focusStatus().then(setFocus).catch((e) => setError(`Cannot read focus status: ${String(e)}`));
@@ -173,6 +187,7 @@ export default function App() {
         </button>
         <span className="font-pixel text-xs">MIZAN</span>
         <span className="text-sm text-ink-dim">{FLAT.find((n) => n.to === location.pathname)?.label}</span>
+        <button onClick={openCapture} className="ml-auto border border-edge px-2 text-xs" title="Ctrl+Shift+K">Capture</button>
       </header>
       {navOpen && <button className="nav-backdrop" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
       <aside id="app-navigation" className="app-sidebar">
@@ -186,6 +201,7 @@ export default function App() {
           </div>
         </div>
 
+        <button onClick={openCapture} className="mx-3 my-2 border border-edge px-3 py-2 text-left text-sm" title="Ctrl+Shift+K">Quick capture</button>
         <nav aria-label="Main navigation" className="mt-1 flex flex-col px-3">
           {GROUPS.map((g) => (
             <div key={g.label}>
@@ -249,12 +265,16 @@ export default function App() {
       </aside>
 
       <main id="main-content" className="app-content" inert={navOpen}>
+        {notice && <div className="mb-4 flex items-center justify-between gap-3 border border-edge p-3 text-sm">
+          <span role="status">{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss capture confirmation">Dismiss</button>
+        </div>}
         {error && <div role="alert" className="mb-4 flex items-center justify-between gap-3 border border-danger p-3 text-sm text-danger">
           {error}<button onClick={() => setError("")} aria-label="Dismiss error">Dismiss</button>
         </div>}
         <Outlet />
       </main>
-      <Palette extra={[{ label: "Exit Mizan", hint: "quit completely", run: askExit }]} />
+      <Palette extra={[{ label: "Quick capture", hint: "task or log · Ctrl+Shift+K", run: openCapture }, { label: "Exit Mizan", hint: "quit completely", run: askExit }]} />
+      <QuickCapture open={captureOpen} close={() => setCaptureOpen(false)} saved={setNotice} />
       <Modal req={modal} close={() => setModal(null)} />
     </div>
   );

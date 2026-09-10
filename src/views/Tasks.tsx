@@ -3,6 +3,8 @@ import { breakdownTask, todayStr, type Project, type Task } from "../lib/api";
 import { addTask, deleteTask, listProjects, listTasks, updateTask } from "../lib/data";
 import ScheduleDialog from "../components/ScheduleDialog";
 import Modal, { type ModalRequest } from "../components/Modal";
+import TaskViews from "../components/TaskViews";
+import { DEFAULT_QUERY, queryTasks } from "../lib/workflows";
 
 const KINDS = ["code", "study", "deen", "freelance", "school", "other"];
 
@@ -15,7 +17,7 @@ export default function Tasks() {
   const [priority, setPriority] = useState(2);
   const [due, setDue] = useState("");
   const [project, setProject] = useState("");
-  const [filter, setFilter] = useState("open");
+  const [query, setQuery] = useState({ ...DEFAULT_QUERY });
   const [editing, setEditing] = useState<number | null>(null);
   const [editText, setEditText] = useState("");
   const [scheduling, setScheduling] = useState<Task | null>(null);
@@ -52,11 +54,7 @@ export default function Tasks() {
     await updateTask(task.id, { title: editText.trim() });
     setEditing(null);
   });
-  const visible = tasks.filter((task) =>
-    filter === "all" || (filter === "done" ? task.status === "done" :
-      task.status !== "done" && (filter === "important" ? task.priority === 1 :
-        filter === "due" ? !!task.due && task.due <= todayStr() : true)),
-  ).sort((a, b) => a.priority - b.priority || (a.due || "9999").localeCompare(b.due || "9999"));
+  const visible = queryTasks(tasks, query, todayStr());
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -84,9 +82,7 @@ export default function Tasks() {
         <button disabled={busy} className="btn-px bg-accent px-4 py-2 font-bold text-black">{busy ? "Saving..." : "Add task"}</button>
       </form>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Task filters">
-        {["open", "important", "due", "done", "all"].map((f) => <button key={f} aria-pressed={filter === f} onClick={() => setFilter(f)} className={`border px-3 py-2 text-sm ${filter === f ? "border-accent text-accent" : "border-edge text-ink-dim"}`}>{f === "due" ? "Due / overdue" : f}</button>)}
-      </div>
+      <TaskViews query={query} change={setQuery} projects={projects} />
       {loading && <p role="status">Loading tasks...</p>}
       {!loading && !visible.length && <p className="panel p-5 text-sm text-ink-dim">No tasks in this view.</p>}
       <ul className="space-y-3">

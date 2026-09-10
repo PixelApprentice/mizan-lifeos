@@ -30,6 +30,7 @@ Quiet dark surfaces, readable monospace text, pixel icons, and a collapsible pix
 companion. Compact windows use a navigation menu instead of a permanent sidebar.
 
 - `Ctrl+K`: command palette.
+- `Ctrl+Shift+K` (or `Cmd+Shift+K`): quick capture from any view.
 - `Alt+1` through `Alt+8`: switch views, except while editing or using a dialog.
 - `Ctrl+S` in Log: save the current note.
 - **Exit:** saves pending log edits, stops the app and its deep-mode timer/blocking.
@@ -37,6 +38,34 @@ companion. Compact windows use a navigation menu instead of a permanent sidebar.
 
 The browser development preview uses isolated demo data. It is not the desktop
 database and is not a backup of your real records.
+
+## Community-plugin-inspired workflows
+
+These are original native adaptations of useful Obsidian community-plugin ideas,
+not installed Obsidian plugins or a compatibility layer:
+
+- **[QuickAdd](https://github.com/chhoumann/quickadd) (MIT):** the global Capture
+  button and command capture a task (priority, estimate, due date, project) or a
+  timestamped daily-log note without leaving your current view. Closing the dialog
+  keeps its draft during this app session; submit it before exiting. Pending log
+  edits are saved before a captured note is appended.
+- **[Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) (MIT):** Tasks
+  supports title/notes search and combined status, project, category, and deadline
+  filters. Open **Filters & saved views** to save named queries. Relative deadlines
+  such as Next 7 days are evaluated against today's date, not the save date.
+  Completing, renaming, or scheduling results updates the original tasks.
+- **[Templater](https://github.com/SilentVoid13/Templater) (AGPLv3):** Log's
+  **Insert template** offers daily plans, learning sessions, meetings, and weekly
+  reviews, plus editable custom templates saved locally. Preview before appending;
+  existing log text is retained. Supported variables are `{{DATE}}`, `{{TIME}}`,
+  `{{DAY}}`, `{{WEEK}}`, `{{DOW}}`, `{{TITLE}}`, and `{{VALUE}}`. Date/day/week use
+  the selected log date; time uses the local time when the dialog opens.
+
+No upstream plugin source is copied or bundled. Mizan does not execute template
+JavaScript, shell commands, HTML, macros, or Tasks query syntax. Recurrence and
+Obsidian vault integration are not included. Custom templates and saved task views
+are stored as individual records in the local SQLite settings table; notes are
+plain Markdown. None of these workflows sends data to external services.
 
 ## Development
 
@@ -48,7 +77,7 @@ pnpm install --frozen-lockfile
 pnpm dev             # browser preview
 pnpm tauri dev       # desktop app
 pnpm build           # TypeScript and frontend production build
-pnpm test            # scheduling and scoring regression tests (Node.js 22.18+)
+pnpm test            # scheduling, scoring, and workflow tests (Node.js 22.18+)
 pnpm test:privacy    # publication guard tests
 cargo test --manifest-path src-tauri/Cargo.toml
 ```

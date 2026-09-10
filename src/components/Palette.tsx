@@ -39,7 +39,7 @@ export default function Palette({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "k") {
         if (!open && document.querySelector('[role="dialog"]')) return;
         e.preventDefault();
         setOpen((o) => !o);

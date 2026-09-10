@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "pixelarticons/react";
 import { dayInfo, ensureDayLog, getSetting, readDayLog, todayStr, writeDayLog } from "../lib/api";
 import { shiftDay } from "../lib/plan";
 import { registerBeforeExit } from "../lib/unsaved";
+import TemplateDialog from "../components/TemplateDialog";
 
 const stamp = () => new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const draftKey = (date: string, root: string) => `mizan:log-draft:${JSON.stringify([root, date])}`;
@@ -16,6 +17,7 @@ export default function Log() {
   const [busy, setBusy] = useState(true);
   const [note, setNote] = useState("");
   const [ready, setReady] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const current = useRef<{ date: string; root: string; text: string; base: string } | null>(null);
   const saving = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,6 +112,28 @@ export default function Log() {
   }, [load]);
 
   useEffect(() => registerBeforeExit(flush), [flush]);
+  useEffect(() => {
+    const appended = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.detail !== current.current?.date) return;
+      const refresh = async () => {
+        while (saving.current) await saving.current;
+        const state = current.current;
+        if (!state) return;
+        const base = state.base;
+        const disk = await readDayLog(state.date);
+        if (current.current !== state) return;
+        if (saving.current || state.base !== base) { await refresh(); return; }
+        if (!disk.startsWith(state.base)) throw new Error("The log changed elsewhere. Your draft is preserved; reopen the log after resolving the conflict.");
+        state.text += disk.slice(state.base.length);
+        state.base = disk;
+        setContent(state.text);
+        persistDraft();
+      };
+      void refresh().catch((e) => setError(String(e)));
+    };
+    window.addEventListener("mizan:log-appended", appended);
+    return () => window.removeEventListener("mizan:log-appended", appended);
+  }, [persistDraft]);
   const blocker = useBlocker(() => !!current.current && current.current.text !== current.current.base);
   useEffect(() => {
     if (blocker.state !== "blocked") return;
@@ -173,7 +197,9 @@ export default function Log() {
         className="min-h-80 flex-1 resize-y border border-edge bg-panel p-4 text-sm leading-relaxed" spellCheck={false} />
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={busy || !ready} onClick={() => void flush().catch(() => { /* Displayed above. */ })} className="btn-px bg-accent px-4 py-2 font-bold text-black">Save log</button>
+        <button disabled={busy || !ready} onClick={() => setTemplatesOpen(true)} className="border border-edge px-3 py-2 text-sm">Insert template</button>
         <span role="status" className="text-xs text-ink-dim">{busy ? "Loading..." : message}</span>
+        {templatesOpen && <TemplateDialog date={date} close={() => setTemplatesOpen(false)} insert={(text) => edit(`${current.current?.text ?? ""}\n\n${text}\n`)} />}
       </div>
       <details className="panel p-3">
         <summary className="text-sm">Quick timestamped note</summary>
