@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag like v0.2.0 (after scripts/bump-version.py and CHANGELOG.md) to build everything
+# and draft a GitHub release. Review the draft, then publish it by hand.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  desktop-linux:
+    runs-on: ubuntu-22.04 # oldest supported glibc for the AppImage and .deb
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libssl-dev pkg-config patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: python3 scripts/bump-version.py --check
+      - name: Tag matches app version
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Mizan ${{ github.ref_name }}
+          releaseBody: See CHANGELOG.md for what changed. Desktop builds are for Linux (deb, rpm, AppImage). Phone APKs are attached by the android job.
+          releaseDraft: true
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: desktop-linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Release keystore from secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "::error::ANDROID_KEYSTORE_BASE64 secret missing; refusing to publish debug-signed APKs"; exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > android/release.jks
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
+      - name: Build signed APKs
+        working-directory: android
+        run: ./gradlew --no-daemon assemblePlayRelease assembleFossRelease
+      - name: Attach to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp android/app/build/outputs/apk/play/release/app-play-release.apk "Mizan-companion-${GITHUB_REF_NAME}.apk"
+          cp android/app/build/outputs/apk/foss/release/app-foss-release.apk "Mizan-companion-${GITHUB_REF_NAME}-foss.apk"
+          sha256sum Mizan-companion-*.apk > SHA256SUMS-android.txt
+          gh release upload "$GITHUB_REF_NAME" Mizan-companion-*.apk SHA256SUMS-android.txt --clobber
+      - name: Remove secrets
+        if: always()
+        run: rm -f android/release.jks android/keystore.properties
