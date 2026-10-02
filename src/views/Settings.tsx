@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { getSetting, setSetting, permBlockApply, permBlockClear, getLifeosConfig, setLifeosStart } from "../lib/api";
 import { DEFAULT_WINDOWS, parseWindows } from "../lib/plan";
+import CompanionSettings from "../components/CompanionSettings";
+import RoutineSettings from "../components/RoutineSettings";
+import { setThemePref, themePref, type ThemePref } from "../lib/theme";
 
 const STEVENBLACK_PORN = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts";
 
-const FIELDS: { key: string; label: string; hint: string; rows?: number }[] = [
+const FIELDS: { key: string; label: string; hint: string; rows?: number; placeholder?: string }[] = [
   {
     key: "blocked_sites",
     label: "blocked sites",
@@ -16,35 +19,33 @@ const FIELDS: { key: string; label: string; hint: string; rows?: number }[] = [
     label: "blocked apps",
     hint: "hyprland window-class substrings · find one with: hyprctl clients | grep class",
   },
-  { key: "focus_presets", label: "focus presets", hint: "comma-separated minutes shown as buttons, e.g. 25,50,90" },
-  { key: "disc_path", label: "Local data folder", hint: "Your tracker, logs and Day 1 stay outside the source repository. Leave empty for ~/Documents/lifeos." },
+  { key: "focus_presets", label: "focus presets", hint: "comma-separated minutes shown as buttons, e.g. 25,50,90", placeholder: "25,50,90" },
+  { key: "disc_path", label: "Local data folder", hint: "Your tracker, logs and Day 1 stay outside the source repository. Leave empty for ~/Documents/lifeos.", placeholder: "~/Documents/lifeos" },
   { key: "prayer_city", label: "Prayer city (optional)", hint: "Entering a city and country enables requests to AlAdhan. Only this location is sent; tasks and logs stay local." },
   { key: "prayer_country", label: "Prayer country (optional)", hint: "Leave both location fields empty to disable online prayer times." },
   {
-    key: "overlay_mode",
-    label: "corner mini-timer",
-    hint: "auto = only when waybar is hidden · always · never — the waybar module shows the timer otherwise",
-  },
-  {
     key: "plan_windows_weekday",
     label: "auto-plan windows · mon–thu",
-    hint: `when tasks may be auto-planned · HH:MM-HH:MM, comma-separated · default ${DEFAULT_WINDOWS.weekday}`,
+    hint: `when tasks may be auto-planned · HH:MM-HH:MM, comma-separated · empty uses the default`,
+    placeholder: DEFAULT_WINDOWS.weekday,
   },
   {
     key: "plan_windows_friday",
     label: "auto-plan windows · friday",
     hint: `default ${DEFAULT_WINDOWS.friday}`,
+    placeholder: DEFAULT_WINDOWS.friday,
   },
   {
     key: "plan_windows_weekend",
     label: "auto-plan windows · sat–sun",
     hint: `default ${DEFAULT_WINDOWS.weekend}`,
+    placeholder: DEFAULT_WINDOWS.weekend,
   },
 ];
 
 const GROUPS = [
   { title: "Scheduling", keys: ["plan_windows_weekday", "plan_windows_friday", "plan_windows_weekend"] },
-  { title: "Focus & blocking", keys: ["focus_presets", "overlay_mode", "blocked_sites", "blocked_apps"] },
+  { title: "Focus & blocking", keys: ["focus_presets", "blocked_sites", "blocked_apps"] },
   { title: "Local storage", keys: ["disc_path"] },
   { title: "Prayer times (optional)", keys: ["prayer_city", "prayer_country"] },
 ];
@@ -116,12 +117,13 @@ export default function Settings() {
   return (
     <div className="mx-auto max-w-2xl space-y-8">
       <header>
-        <h2 className="cursor font-bold">settings</h2>
-        <p className="mt-1 text-sm text-ink-dim">nothing here is fixed — the app follows these, not the other way</p>
+        <h2 className="cursor font-bold">Settings</h2>
+        <p className="mt-1 text-sm text-ink-dim">Everything here is yours to change. The app adapts to you, not the other way round.</p>
       </header>
 
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       {!loaded && !error && <p role="status">Loading settings...</p>}
+      <Appearance />
       <section className="panel space-y-3 p-4">
         <h3 className="font-bold">Your LifeOS timeline</h3>
         <p className="text-sm text-ink-dim">Choose Day 1 once, then keep going. There is no final day and no automatic cycle reset. Changing this date preserves your existing logs and records.</p>
@@ -160,13 +162,7 @@ export default function Settings() {
           <label key={f.key} className="block">
             <div className="hd">{f.label}</div>
             <p className="mt-2 text-[11px] text-ink-dim">{f.hint}</p>
-            {f.key === "overlay_mode" ? (
-              <select value={values[f.key] || "auto"} onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))} className="mt-2 w-full border border-edge bg-panel p-3 text-sm">
-                <option value="auto">Automatic - when Waybar is hidden</option>
-                <option value="always">Always show</option>
-                <option value="never">Never show</option>
-              </select>
-            ) : f.rows ? (
+            {f.rows ? (
               <textarea
                 value={values[f.key] ?? ""}
                 onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
@@ -175,6 +171,7 @@ export default function Settings() {
               />
             ) : (
               <input
+                placeholder={f.placeholder}
                 value={values[f.key] ?? ""}
                 onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
                 className="mt-2 w-full border border-edge bg-panel p-3 text-sm outline-none focus:border-accent"
@@ -192,6 +189,10 @@ export default function Settings() {
         </button>
         <span role="status" className="text-xs text-accent">{saved}</span>
       </div>
+
+      <RoutineSettings />
+
+      <CompanionSettings />
 
       <details className="panel space-y-4 p-5">
         <summary className="font-bold">Advanced: permanent site shield</summary>
@@ -284,5 +285,35 @@ pnpm tauri build --no-bundle && bash scripts/install-desktop.sh   # launcher ico
 # recommended alongside: uBlock Origin from addons.mozilla.org (don't reinvent ad blocking)`}</pre>
       </details>
     </div>
+  );
+}
+
+function Appearance() {
+  const [pref, setPref] = useState<ThemePref>(themePref);
+  useEffect(() => {
+    const sync = () => setPref(themePref());
+    window.addEventListener("mizan:theme", sync);
+    return () => window.removeEventListener("mizan:theme", sync);
+  }, []);
+  const options: { id: ThemePref; label: string; hint: string }[] = [
+    { id: "light", label: "Light", hint: "Bright and calm, for daytime" },
+    { id: "dark", label: "Dark", hint: "True black, easy on OLED screens" },
+    { id: "system", label: "Automatic", hint: "Follows your system setting" },
+  ];
+  return (
+    <section className="panel space-y-3 p-4" aria-labelledby="appearance-title">
+      <h3 id="appearance-title" className="font-bold">Appearance</h3>
+      <div role="radiogroup" aria-labelledby="appearance-title" className="grid gap-2 sm:grid-cols-3">
+        {options.map((o) => (
+          <button key={o.id} role="radio" aria-checked={pref === o.id} onClick={() => { setThemePref(o.id); setPref(o.id); }}
+            className={`border p-3 text-left text-sm ${pref === o.id ? "border-accent bg-accent-dim" : "border-edge hover:border-ink-faint"}`}>
+            <span className={`mb-2 block h-10 border border-edge ${o.id === "light" ? "bg-[#f5f5f7]" : o.id === "dark" ? "bg-black" : "bg-[linear-gradient(135deg,#f5f5f7_50%,#000_50%)]"}`} aria-hidden="true" />
+            <span className="block font-bold">{o.label}</span>
+            <span className="block text-xs text-ink-dim">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-ink-dim">Applies instantly. You can also switch from the command palette (Ctrl+K).</p>
+    </section>
   );
 }

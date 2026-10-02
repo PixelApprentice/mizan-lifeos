@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple balance mark (mizan) in the app accent colour on black. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#000000" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#34D399" android:pathData="M52,26h4v52h-4z M30,38h48v4h-48z M40,82h28v4h-28z" />
+    <path android:fillColor="#34D399" android:pathData="M30,42l-10,20h20z M78,42l-10,20h20z" />
+</vector>

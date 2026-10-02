@@ -43,6 +43,7 @@ backups/
 backup-*/
 screenshots/
 recordings/
+releases/
 **/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].md
 
 # Credentials and machine-specific configuration.
@@ -65,3 +66,8 @@ target/
 test-results/
 playwright-report/
 *.tsbuildinfo
+
+# Release signing secrets
+android/keystore.properties
+*.jks
+*.keystore

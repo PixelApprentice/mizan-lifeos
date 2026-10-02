@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter};
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 
@@ -47,9 +47,9 @@ pub struct FocusState {
     /// Timer pause (counting only — blocking stays active). None = running.
     #[serde(default)]
     pub paused_at: Option<String>,
-    /// Corner mini-timer: "auto" (only when waybar is hidden), "always", "never".
-    #[serde(default = "default_overlay_mode")]
-    pub overlay_mode: String,
+    /// Times the paired phone left the focus screen during this session.
+    #[serde(default)]
+    pub phone_leaves: u32,
     /// Set when the user ended early; hosts unblock is delayed BROKEN_LINGER_SECS.
     pub broken_at: Option<String>,
     pub broken_reason: Option<String>,
@@ -64,6 +64,8 @@ pub struct SessionRecord {
     pub broken: bool,
     pub reason: String,
     pub kills: u32,
+    #[serde(default)]
+    pub phone_leaves: u32,
 }
 
 fn read_state() -> Option<FocusState> {
@@ -79,27 +81,6 @@ fn write_state(s: &FocusState) {
 
 fn clear_state() {
     let _ = fs::remove_file(state_file());
-}
-
-fn default_overlay_mode() -> String {
-    "auto".into()
-}
-
-/// ML4W hides waybar by touching a flag file and killing the process.
-fn waybar_hidden() -> bool {
-    if let Ok(home) = std::env::var("HOME") {
-        if PathBuf::from(home)
-            .join(".config/ml4w/settings/waybar-disabled")
-            .exists()
-        {
-            return true;
-        }
-    }
-    !Command::new("pgrep")
-        .args(["-x", "waybar"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 fn parse_t(s: &str) -> Option<DateTime<Local>> {
@@ -172,6 +153,7 @@ fn record_session(state: &FocusState, ended: DateTime<Local>, broken: bool, reas
         broken,
         reason: reason.to_string(),
         kills: state.kills,
+        phone_leaves: state.phone_leaves,
     };
     if let Ok(line) = serde_json::to_string(&rec) {
         if let Ok(mut f) = fs::OpenOptions::new()
@@ -212,8 +194,8 @@ fn record_session(state: &FocusState, ended: DateTime<Local>, broken: bool, reas
         let intent = state.intent.as_deref().unwrap_or("(no stated intent)");
         let _ = writeln!(
             f,
-            "\nDeep session [{intent}]: {} min planned, {} min actual, {} app closes, {verdict}",
-            rec.planned_min, rec.actual_min, rec.kills
+            "\nDeep session [{intent}]: {} min planned, {} min actual, {} app closes, {} phone checks, {verdict}",
+            rec.planned_min, rec.actual_min, rec.kills, rec.phone_leaves
         );
     }
 }
@@ -225,7 +207,6 @@ pub fn focus_start(
     apps: Vec<String>,
     intent: Option<String>,
     disc: Option<String>,
-    overlay_mode: Option<String>,
 ) -> Result<FocusState, String> {
     // Recover from stale state instead of refusing forever (the "can't restart" bug):
     // an expired session or a broken session past its linger window is cleaned up here.
@@ -241,7 +222,6 @@ pub fn focus_start(
             }
             let _ = hosts_helper("off", &[]);
             clear_state();
-            close_overlay();
         } else if existing.paused_at.is_none()
             && parse_t(&existing.ends_at).map(|e| now >= e).unwrap_or(true)
         {
@@ -267,7 +247,7 @@ pub fn focus_start(
         intent: intent.clone(),
         disc,
         paused_at: None,
-        overlay_mode: overlay_mode.unwrap_or_else(default_overlay_mode),
+        phone_leaves: 0,
         broken_at: None,
         broken_reason: None,
     };
@@ -324,7 +304,6 @@ fn finish(state: &FocusState, now: DateTime<Local>) {
         notify("Deep mode complete", &body, false);
     }
     clear_state();
-    close_overlay();
 }
 
 #[tauri::command]
@@ -346,7 +325,7 @@ pub fn session_running() -> bool {
 }
 
 /// Leave nothing running behind: end any session (an early exit is logged as BROKEN with
-/// the given reason), lift the deep-mode hosts block, close the corner window. Without the
+/// the given reason) and lift the deep-mode hosts block. Without the
 /// app's watcher nothing would ever lift the block, which is how a stale block survived before.
 pub fn shutdown_cleanup(reason: Option<String>) -> Result<(), String> {
     let hosts = fs::read_to_string("/etc/hosts")
@@ -370,7 +349,6 @@ pub fn shutdown_cleanup(reason: Option<String>) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(format!("Cannot clear the focus timer before exit: {e}")),
     }
-    close_overlay();
     Ok(())
 }
 
@@ -403,7 +381,7 @@ pub fn focus_pause() -> Result<FocusState, String> {
     Ok(s)
 }
 
-// ---------- Corner overlay window (semi-transparent ASCII mini-timer) ----------
+// ---------- Hyprland helpers ----------
 
 /// Hyprland ≥ 0.55 replaced the config keywords with a Lua API: `hyprctl keyword windowrulev2`
 /// and `hyprctl dispatch closewindow address:…` no longer parse. Use `hyprctl eval` with the
@@ -433,92 +411,6 @@ fn hypr_close_window(address: &str) {
     }
 }
 
-fn hypr_overlay_rules() {
-    // Apply once per app run — repeated `hl.window_rule` calls would stack duplicate rules.
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        // Float + pin the overlay in the top-right corner on Hyprland; harmless elsewhere.
-        // no_focus keeps it from stealing keyboard focus; it stays draggable via startDragging.
-        let lua =
-            "hl.window_rule({ name = 'mizan-overlay', match = { title = '^(mizan overlay)$' }, \
-               float = true, pin = true, no_focus = true, border_size = 0, rounding = 0, \
-               size = '190 96', move = '100%-206 46' })";
-        if hyprctl_lua(lua) {
-            return;
-        }
-        // Pre-0.55 Hyprland: legacy windowrulev2 keywords.
-        for rule in [
-            "float, title:^(mizan overlay)$",
-            "pin, title:^(mizan overlay)$",
-            "noborder, title:^(mizan overlay)$",
-            "nofocus, title:^(mizan overlay)$",
-            "size 190 96, title:^(mizan overlay)$",
-            "move 100%-206 46, title:^(mizan overlay)$",
-        ] {
-            let _ = Command::new("hyprctl")
-                .args(["keyword", "windowrulev2", rule])
-                .output();
-        }
-    });
-}
-
-fn create_overlay(app: &AppHandle) {
-    if app.get_webview_window("overlay").is_some() {
-        return;
-    }
-    hypr_overlay_rules();
-    let _ = WebviewWindowBuilder::new(
-        app,
-        "overlay",
-        WebviewUrl::App("index.html#/overlay".into()),
-    )
-    .title("mizan overlay")
-    .inner_size(190.0, 96.0)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(false)
-    .build();
-}
-
-/// Show/hide from any thread; window creation must happen on the main thread.
-fn set_overlay(visible: bool) {
-    let Some(app) = APP.get() else { return };
-    let app2 = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let exists = app2.get_webview_window("overlay").is_some();
-        if visible && !exists {
-            create_overlay(&app2);
-        } else if !visible && exists {
-            if let Some(w) = app2.get_webview_window("overlay") {
-                let _ = w.close();
-            }
-        }
-    });
-}
-
-#[tauri::command]
-pub fn overlay_show(app: AppHandle) -> Result<(), String> {
-    create_overlay(&app);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn overlay_hide(app: AppHandle) {
-    if let Some(w) = app.get_webview_window("overlay") {
-        let _ = w.close();
-    }
-}
-
-fn close_overlay() {
-    if let Some(app) = APP.get() {
-        if let Some(w) = app.get_webview_window("overlay") {
-            let _ = w.close();
-        }
-    }
-}
-
 #[tauri::command]
 pub fn read_sessions() -> Result<Vec<SessionRecord>, String> {
     let text = fs::read_to_string(sessions_file()).unwrap_or_default();
@@ -538,6 +430,30 @@ struct HyprClient {
 }
 
 static WARNED: Mutex<Option<HashMap<String, DateTime<Local>>>> = Mutex::new(None);
+
+/// Tell every listener (desktop UI, phone companion) that the session state changed.
+pub fn focus_changed() {
+    if let Some(app) = APP.get() {
+        let _ = app.emit("mizan://focus-changed", ());
+    }
+}
+
+/// The paired phone left the full-screen focus display while a session was running.
+pub fn phone_left() -> Result<u32, String> {
+    let mut state = read_state().ok_or("No focus session running.")?;
+    if state.broken_at.is_some() || state.paused_at.is_some() {
+        return Ok(state.phone_leaves);
+    }
+    state.phone_leaves += 1;
+    write_state(&state);
+    notify(
+        "Phone left the focus screen",
+        "Logged for this session. Put it face down and come back.",
+        false,
+    );
+    focus_changed();
+    Ok(state.phone_leaves)
+}
 
 pub fn spawn_watcher(app: AppHandle) {
     let _ = APP.set(app);
@@ -561,7 +477,7 @@ fn watch_tick() {
         if (now - b).num_seconds() >= BROKEN_LINGER_SECS {
             let _ = hosts_helper("off", &[]);
             clear_state();
-            close_overlay();
+            focus_changed();
         }
         return; // no app enforcement after a break; the damage is logged
     }
@@ -571,17 +487,12 @@ fn watch_tick() {
         if let Some(ends) = parse_t(&state.ends_at) {
             if now >= ends {
                 finish(&state, now);
+                focus_changed();
                 return;
             }
         }
     }
 
-    // Corner overlay follows the chosen mode; "auto" tracks waybar visibility live.
-    match state.overlay_mode.as_str() {
-        "always" => set_overlay(true),
-        "never" => set_overlay(false),
-        _ => set_overlay(waybar_hidden()),
-    }
 
     if state.apps.is_empty() {
         return;
@@ -627,5 +538,6 @@ fn watch_tick() {
         let mut s = state;
         s.kills += kills;
         write_state(&s);
+        focus_changed();
     }
 }

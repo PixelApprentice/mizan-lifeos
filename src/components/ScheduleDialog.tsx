@@ -5,6 +5,7 @@ import { dayInfo, getSetting, todayStr, type Task } from "../lib/api";
 import { addEvent, listEvents } from "../lib/data";
 import { autoPlan, dayKind, DEFAULT_WINDOWS, KIND_COLORS, shiftDay } from "../lib/plan";
 import { useDialogFocus } from "./useDialogFocus";
+import { TimeField } from "./DurationWheel";
 
 export async function windowsFor(date: string): Promise<string> {
   const kind = dayKind(date);
@@ -15,7 +16,8 @@ export async function windowsFor(date: string): Promise<string> {
 export async function suggestSlot(task: Task, date: string): Promise<{ start: string; end: string } | null> {
   const [events, info, win] = await Promise.all([listEvents(), dayInfo(date), windowsFor(date)]);
   const now = new Date();
-  const notBefore = date === todayStr() ? now.getHours() * 60 + now.getMinutes() : undefined;
+  // Round up to the next 5 minutes so suggestions read 11:05, not 11:03.
+  const notBefore = date === todayStr() ? Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5 : undefined;
   const { placed } = autoPlan(date, [task], events, win, info.prayers, new Map(), notBefore);
   return placed[0] ? { start: placed[0].start, end: placed[0].end } : null;
 }
@@ -107,7 +109,7 @@ export default function ScheduleDialog({
       >
         <div className="hd">schedule</div>
         <p className="text-sm">{task.title}</p>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-start gap-2 text-sm">
           <input
             aria-label="Task schedule date"
             autoFocus
@@ -120,14 +122,7 @@ export default function ScheduleDialog({
             }}
             className="border border-edge bg-panel-2 px-2 py-1.5 outline-none focus:border-accent"
           />
-          <input
-            aria-label="Task schedule time"
-            disabled={busy}
-            type="time"
-            value={time}
-            onChange={(e) => { request.current++; setTime(e.target.value); }}
-            className="border border-edge bg-panel-2 px-2 py-1.5 tabular-nums outline-none focus:border-accent"
-          />
+          <TimeField label="Task schedule time" disabled={busy} value={time} change={(value) => { request.current++; setTime(value); }} />
           <input
             aria-label="Task scheduled minutes"
             disabled={busy}

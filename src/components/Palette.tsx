@@ -1,6 +1,7 @@
 // Ctrl+K command palette — Notion-style quick actions and navigation.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { cycleTheme } from "../lib/theme";
 
 interface Cmd {
   label: string;
@@ -30,6 +31,7 @@ export default function Palette({
       { label: "Go: Log", hint: "write today's log", run: () => nav("/log") },
       { label: "Go: Stats", hint: "streaks, charts", run: () => nav("/stats") },
       { label: "Go: Settings", hint: "blocklists, paths", run: () => nav("/settings") },
+      { label: "Switch light / dark", hint: "appearance", run: () => cycleTheme() },
       ...(extra ?? []),
     ],
     [nav, extra],

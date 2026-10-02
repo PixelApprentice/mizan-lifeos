@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { Component, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from "react";
 import {
   Sun,
   Notes,
@@ -11,15 +11,17 @@ import {
   SettingsCog,
   Power,
   Menu,
+  Users,
 } from "pixelarticons/react";
-import { appQuit, focusRemainingSec, focusStatus, readTracker, todayStr, IS_TAURI, type FocusState } from "./lib/api";
-import { currentStreak, scoreRow } from "./lib/score";
-import Mascot, { type Mood } from "./components/Mascot";
+import { appQuit, focusRemainingSec, focusStatus, IS_TAURI, type FocusState } from "./lib/api";
 import Palette from "./components/Palette";
 import Modal, { type ModalRequest } from "./components/Modal";
-import { Hearts, Logo } from "./components/Pixel";
+import { Logo } from "./components/Pixel";
 import { flushBeforeExit } from "./lib/unsaved";
 import QuickCapture from "./components/QuickCapture";
+import { useClock, useFocus } from "./lib/focusStore";
+import { useCompanionBridge } from "./lib/companion";
+import { useWorkspaces } from "./team/api";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 interface NavItem {
@@ -47,24 +49,75 @@ const GROUPS: { label: string; items: NavItem[] }[] = [
   },
   { label: "do", items: [{ to: "/focus", label: "focus", icon: Target }] },
   { label: "review", items: [{ to: "/stats", label: "stats", icon: ChartBarBig }] },
+  { label: "team", items: [{ to: "/team", label: "workspaces", icon: Users }] },
   { label: "system", items: [{ to: "/settings", label: "settings", icon: SettingsCog }] },
 ];
 const FLAT = GROUPS.flatMap((g) => g.items);
 
+/** Team workspaces under the "team" group, so each one is a click away. */
+function TeamNav({ close }: { close: () => void }) {
+  const { list } = useWorkspaces();
+  const { pathname } = useLocation();
+  return <>
+    {list?.map((w) => (
+      <NavLink key={w.id} to={`/team/${w.id}/board`} onClick={close}
+        className={() => `truncate border-l-2 py-1 pl-9 pr-3 text-xs ${pathname.startsWith(`/team/${w.id}`) ? "border-accent text-accent" : "border-transparent text-ink-dim hover:bg-panel-2 hover:text-ink"}`}>
+        {w.name}{w.pending > 0 ? ` · ${w.pending}` : ""}
+      </NavLink>
+    ))}
+  </>;
+}
+
 const isRunning = (f: FocusState | null) => !!f && !f.broken_at;
+
+/** A crash in one view shows a readable message instead of killing the whole window. */
+class ViewErrorBoundary extends Component<{ children: ReactNode }, { message: string }> {
+  state = { message: "" };
+  static getDerivedStateFromError(error: unknown) {
+    return { message: String(error) };
+  }
+  componentDidCatch(error: Error) {
+    console.error("Mizan view failed", error);
+  }
+  render() {
+    if (!this.state.message) return this.props.children;
+    return (
+      <div role="alert" className="panel space-y-3 p-5">
+        <h2 className="font-bold text-danger">This view hit an error</h2>
+        <p className="break-words text-sm text-ink-dim">{this.state.message}</p>
+        <p className="text-sm text-ink-dim">Saved records remain on this device. Unsaved changes may need to be entered again.</p>
+        <button onClick={() => this.setState({ message: "" })} className="border border-edge px-3 py-2 text-sm">
+          Try again
+        </button>
+      </div>
+    );
+  }
+}
+
+function FocusSummary({ focus }: { focus: FocusState }) {
+  const now = useClock(!focus.paused_at, 1000);
+  return <NavLink to="/focus" className="panel block p-3 text-center" aria-label="Open running focus timer">
+    <div className="text-xs uppercase tracking-widest text-accent">{focus.paused_at ? "paused" : "deep mode"}</div>
+    <div className="font-digits text-4xl leading-none">{Math.ceil(focusRemainingSec(focus, now) / 60)} min</div>
+    {focus.intent && <div className="truncate text-xs text-ink-dim">{focus.intent}</div>}
+  </NavLink>;
+}
 
 export default function App() {
   const nav = useNavigate();
   const location = useLocation();
+  // All views share one scroll container. Without this, opening Planner or Projects after
+  // scrolling a long list kept the old offset and showed the bottom of the new view.
+  const mainRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => { mainRef.current?.scrollTo(0, 0); }, [location.pathname]);
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState("");
-  const [focus, setFocus] = useState<FocusState | null>(null);
-  const [streak, setStreak] = useState(0);
-  const [todayScore, setTodayScore] = useState<number | null>(null);
+  const { state: focus, error: focusError } = useFocus();
   const [modal, setModal] = useState<ModalRequest | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const openCapture = useCallback(() => { setNavOpen(false); setCaptureOpen(true); }, []);
+  useCompanionBridge(setError);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -75,27 +128,6 @@ export default function App() {
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [openCapture]);
-
-  useEffect(() => {
-    const tick = () => focusStatus().then(setFocus).catch((e) => setError(`Cannot read focus status: ${String(e)}`));
-    tick();
-    const id = setInterval(tick, 5000);
-    const loadTracker = () =>
-      readTracker()
-        .then((rows) => {
-          const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
-          setStreak(currentStreak(sorted, (row) => row.fajr_on_time === "1", todayStr()));
-          const t = sorted.find((r) => r.date === todayStr());
-          setTodayScore(t ? scoreRow(t).score : null);
-        })
-        .catch((e) => setError(`Cannot read today's record: ${String(e)}`));
-    loadTracker();
-    window.addEventListener("mizan:tracker-saved", loadTracker);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener("mizan:tracker-saved", loadTracker);
-    };
-  }, []);
 
   // Alt+1-8 switches views without intercepting ordinary typing.
   useEffect(() => {
@@ -130,7 +162,7 @@ export default function App() {
     if (isRunning(f)) {
       setModal({
         title: "Exit during deep mode = BROKEN session",
-        body: "Exiting stops everything now: the timer, site/app blocking, the corner window. The session is logged as broken. Type the honest reason.",
+        body: "Exiting stops the timer, site/app blocking, and phone sharing. The session is logged as broken. Type the honest reason.",
         input: { placeholder: "why are you exiting? (min 5 chars)", minLen: 5 },
         confirmLabel: "Exit Mizan",
         danger: true,
@@ -166,28 +198,26 @@ export default function App() {
     if (!IS_TAURI) return;
     let un: (() => void) | undefined;
     let dead = false;
-    import("@tauri-apps/api/event").then(({ listen }) =>
+    void import("@tauri-apps/api/event").then(({ listen }) =>
       listen("mizan://close-requested", () => askExit()).then((u) => (dead ? u() : (un = u))),
-    );
+    ).catch((e: unknown) => setError(`Cannot handle window close requests: ${String(e)}`));
     return () => {
       dead = true;
       un?.();
     };
   }, [askExit]);
 
-  const mood: Mood = focus?.broken_at ? "warn" : focus ? "focus" : todayScore === 9 ? "celebrate" : "idle";
-  const remaining = focus ? Math.ceil(focusRemainingSec(focus, Date.now()) / 60) : 0;
   let k = 0;
 
   return (
-    <div className={`app-shell ${navOpen ? "nav-open" : ""}`}>
+    <div className={`app-shell ${navOpen ? "nav-open" : ""} ${location.pathname.startsWith("/team") ? "space-team" : ""}`}>
       <header className="compact-header">
         <button onClick={() => setNavOpen(!navOpen)} aria-expanded={navOpen} aria-controls="app-navigation" aria-label="Toggle navigation">
           <Menu className="px-icon h-5 w-5" />
         </button>
         <span className="font-pixel text-xs">MIZAN</span>
-        <span className="text-sm text-ink-dim">{FLAT.find((n) => n.to === location.pathname)?.label}</span>
-        <button onClick={openCapture} className="ml-auto border border-edge px-2 text-xs" title="Ctrl+Shift+K">Capture</button>
+        <span className="text-sm text-ink-dim">{FLAT.find((n) => n.to === location.pathname)?.label ?? (location.pathname.startsWith("/team") ? "team" : "")}</span>
+        <button onClick={openCapture} className="ml-auto border border-edge px-3 text-xs" title="Ctrl+Shift+K">Capture</button>
       </header>
       {navOpen && <button className="nav-backdrop" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
       <aside id="app-navigation" className="app-sidebar">
@@ -230,6 +260,7 @@ export default function App() {
                     </NavLink>
                   );
                 })}
+                {g.label === "team" && <TeamNav close={() => setNavOpen(false)} />}
               </div>
             </div>
           ))}
@@ -239,20 +270,7 @@ export default function App() {
         </p>
 
         <div className="mt-auto space-y-4 p-4">
-          {focus && !focus.broken_at && (
-            <div className="panel p-3 text-center">
-              <div className="font-pixel-sm text-[10px] uppercase tracking-[0.25em] text-accent">
-                {focus.paused_at ? "paused" : "deep mode"}
-              </div>
-              <div className="font-digits text-4xl leading-none">{remaining}′</div>
-              {focus.intent && <div className="mt-0.5 truncate text-[10px] text-ink-dim">{focus.intent}</div>}
-            </div>
-          )}
-          <details className="sidebar-companion">
-            <summary className="text-xs text-ink-dim">Pixel companion</summary>
-            <div className="space-y-3 pt-4"><Mascot mood={mood} streak={streak} />
-            {todayScore !== null && <Hearts n={todayScore} />}</div>
-          </details>
+          {focus && !focus.broken_at && <FocusSummary focus={focus} />}
           <button
             onClick={askExit}
             className="flex w-full items-center justify-center gap-2 border border-danger/30 px-3 py-2 text-xs text-danger/80 hover:border-danger hover:bg-danger/10 hover:text-danger"
@@ -264,14 +282,17 @@ export default function App() {
         </div>
       </aside>
 
-      <main id="main-content" className="app-content" inert={navOpen}>
+      <main id="main-content" ref={mainRef} className="app-content" inert={navOpen}>
         {notice && <div className="mb-4 flex items-center justify-between gap-3 border border-edge p-3 text-sm">
           <span role="status">{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss capture confirmation">Dismiss</button>
         </div>}
         {error && <div role="alert" className="mb-4 flex items-center justify-between gap-3 border border-danger p-3 text-sm text-danger">
           {error}<button onClick={() => setError("")} aria-label="Dismiss error">Dismiss</button>
         </div>}
-        <Outlet />
+        {focusError && <p role="alert" className="mb-4 text-sm text-danger">{focusError}</p>}
+        <ViewErrorBoundary key={location.pathname}>
+          <Suspense fallback={<p role="status">Loading view...</p>}><Outlet /></Suspense>
+        </ViewErrorBoundary>
       </main>
       <Palette extra={[{ label: "Quick capture", hint: "task or log · Ctrl+Shift+K", run: openCapture }, { label: "Exit Mizan", hint: "quit completely", run: askExit }]} />
       <QuickCapture open={captureOpen} close={() => setCaptureOpen(false)} saved={setNotice} />

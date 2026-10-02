@@ -1,15 +1,18 @@
 // Mizan — personal discipline app. Library entry: plugins, migrations, commands, focus watcher.
 
+mod backup;
 mod commands;
+mod companion;
 mod focus;
 mod lifeos;
+mod recover;
+mod team;
 
 use tauri::{Emitter, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    let migrations = vec![
+pub(crate) fn migrations() -> Vec<Migration> {
+    vec![
         Migration {
             version: 1,
             description: "initial schema",
@@ -65,7 +68,88 @@ pub fn run() {
             "#,
             kind: MigrationKind::Up,
         },
-    ];
+        // Manual board order, completion time (stats), and sync bookkeeping for the phone
+        // companion: stable sync ids, last-modified stamps, and tombstones for deletions.
+        // Triggers keep these current for every writer (UI, sync server) automatically.
+        Migration {
+            version: 3,
+            description: "task order, completion time, sync metadata",
+            sql: r#"
+                ALTER TABLE tasks ADD COLUMN position REAL NOT NULL DEFAULT 0;
+                ALTER TABLE tasks ADD COLUMN completed_at TEXT;
+                ALTER TABLE tasks ADD COLUMN sync_id TEXT;
+                ALTER TABLE tasks ADD COLUMN updated_at TEXT;
+                ALTER TABLE projects ADD COLUMN sync_id TEXT;
+                ALTER TABLE projects ADD COLUMN updated_at TEXT;
+                ALTER TABLE events ADD COLUMN sync_id TEXT;
+                ALTER TABLE events ADD COLUMN updated_at TEXT;
+
+                UPDATE tasks SET position = 1024 * (
+                    SELECT COUNT(*) FROM tasks AS o
+                    WHERE o.status = tasks.status AND o.parent_id IS tasks.parent_id
+                      AND (CASE WHEN tasks.parent_id IS NULL
+                                THEN (o.priority < tasks.priority OR (o.priority = tasks.priority AND o.id <= tasks.id))
+                                ELSE o.id <= tasks.id END)
+                );
+                UPDATE tasks SET completed_at = created_at WHERE status = 'done';
+                UPDATE tasks SET sync_id = lower(hex(randomblob(16))), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now');
+                UPDATE projects SET sync_id = lower(hex(randomblob(16))), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now');
+                UPDATE events SET sync_id = lower(hex(randomblob(16))), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now');
+                CREATE UNIQUE INDEX IF NOT EXISTS tasks_sync_id ON tasks(sync_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS projects_sync_id ON projects(sync_id);
+                CREATE UNIQUE INDEX IF NOT EXISTS events_sync_id ON events(sync_id);
+                CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(parent_id, status, position);
+
+                CREATE TABLE IF NOT EXISTS tombstones (
+                    kind TEXT NOT NULL,
+                    sync_id TEXT NOT NULL,
+                    deleted_at TEXT NOT NULL,
+                    PRIMARY KEY (kind, sync_id)
+                );
+
+                -- Rows written by sync carry their own sync_id and stamp; plain app writes get them here.
+                -- OLD.sync_id IS NULL means the insert trigger is filling in metadata, so it is not an edit.
+                CREATE TRIGGER tasks_sync_insert AFTER INSERT ON tasks WHEN NEW.sync_id IS NULL OR NEW.updated_at IS NULL BEGIN
+                    UPDATE tasks SET sync_id = COALESCE(NEW.sync_id, lower(hex(randomblob(16)))),
+                        updated_at = COALESCE(NEW.updated_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER tasks_sync_update AFTER UPDATE ON tasks WHEN NEW.updated_at IS OLD.updated_at AND OLD.sync_id IS NOT NULL BEGIN
+                    UPDATE tasks SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER tasks_sync_delete AFTER DELETE ON tasks WHEN OLD.sync_id IS NOT NULL BEGIN
+                    INSERT OR REPLACE INTO tombstones VALUES ('task', OLD.sync_id, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                END;
+
+                CREATE TRIGGER projects_sync_insert AFTER INSERT ON projects WHEN NEW.sync_id IS NULL OR NEW.updated_at IS NULL BEGIN
+                    UPDATE projects SET sync_id = COALESCE(NEW.sync_id, lower(hex(randomblob(16)))),
+                        updated_at = COALESCE(NEW.updated_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER projects_sync_update AFTER UPDATE ON projects WHEN NEW.updated_at IS OLD.updated_at AND OLD.sync_id IS NOT NULL BEGIN
+                    UPDATE projects SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER projects_sync_delete AFTER DELETE ON projects WHEN OLD.sync_id IS NOT NULL BEGIN
+                    INSERT OR REPLACE INTO tombstones VALUES ('project', OLD.sync_id, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                END;
+
+                CREATE TRIGGER events_sync_insert AFTER INSERT ON events WHEN NEW.sync_id IS NULL OR NEW.updated_at IS NULL BEGIN
+                    UPDATE events SET sync_id = COALESCE(NEW.sync_id, lower(hex(randomblob(16)))),
+                        updated_at = COALESCE(NEW.updated_at, strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER events_sync_update AFTER UPDATE ON events WHEN NEW.updated_at IS OLD.updated_at AND OLD.sync_id IS NOT NULL BEGIN
+                    UPDATE events SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id;
+                END;
+                CREATE TRIGGER events_sync_delete AFTER DELETE ON events WHEN OLD.sync_id IS NOT NULL BEGIN
+                    INSERT OR REPLACE INTO tombstones VALUES ('event', OLD.sync_id, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                END;
+            "#,
+            kind: MigrationKind::Up,
+        },
+    ]
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let migrations = migrations();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -84,7 +168,6 @@ pub fn run() {
             commands::append_to_log,
             commands::read_day_log,
             commands::write_day_log,
-            commands::breakdown_task,
             commands::perm_block_apply,
             commands::perm_block_clear,
             focus::focus_start,
@@ -92,15 +175,32 @@ pub fn run() {
             focus::focus_status,
             focus::focus_pause,
             focus::read_sessions,
-            focus::overlay_show,
-            focus::overlay_hide,
             focus::app_quit,
+            companion::companion_status,
+            companion::companion_set_enabled,
+            companion::companion_reset_token,
+            companion::companion_usb_connect,
+            team::team_list,
+            team::team_create,
+            team::team_state,
+            team::team_submit,
+            team::team_sync,
+            team::team_hosting,
+            team::team_invite,
+            team::team_join,
+            team::team_remove,
+            team::team_export,
+            team::team_my_issues,
         ])
         .setup(|app| {
             focus::spawn_watcher(app.handle().clone());
+            companion::init(app.handle().clone());
+            team::init(app.handle().clone());
+            backup::spawn(app.handle().clone());
+            recover::watch_renderer(app.handle());
             Ok(())
         })
-        // Closing the main window quits the whole app (overlay included) instead of leaving
+        // Closing the main window quits the whole app instead of leaving
         // a headless process behind. Mid-session, the UI asks for a reason first.
         .on_window_event(|window, event| {
             if window.label() != "main" {

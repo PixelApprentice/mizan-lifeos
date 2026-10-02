@@ -10,36 +10,15 @@ import {
   type TrackerRow,
 } from "../lib/api";
 import { livePrayers } from "../lib/prayers";
-import { listEvents, listTasks } from "../lib/data";
-import { scoreRow } from "../lib/score";
+import { listEvents, listTasks, updateTask } from "../lib/data";
+import { focusLink } from "../lib/focusLink";
+import { scoreDay, targetOf, visibleOn } from "../lib/routine";
+import { useRoutine } from "../lib/useRoutine";
+import { team, type MyIssue } from "../team/api";
+import { priorityOf, statusLabel } from "../team/model";
 import { shiftDay } from "../lib/plan";
 import type { CalEvent, Task } from "../lib/api";
 import { PixelBar } from "../components/Pixel";
-
-interface Item {
-  key: string;
-  label: string;
-  type: "bool" | "min" | "count";
-  target?: (weekend: boolean) => number;
-}
-
-const ITEMS: Item[] = [
-  { key: "fajr_on_time", label: "Fajr on time (before sunrise)", type: "bool" },
-  { key: "prayers_5", label: "All five prayers on time", type: "bool" },
-  { key: "sleep_on_time", label: "Sleep routine followed", type: "bool" },
-  { key: "quran_min", label: "Quran minutes", type: "min", target: () => 60 },
-  { key: "dsa_min", label: "DSA minutes", type: "min", target: (w) => (w ? 60 : 45) },
-  { key: "dsa_problems", label: "DSA problems solved", type: "count" },
-  { key: "build_min", label: "Build minutes", type: "min", target: (w) => (w ? 300 : 90) },
-  { key: "consume_min", label: "Consume minutes (≤ ⅓ of build)", type: "min" },
-  { key: "islamic_knowledge_min", label: "Islamic knowledge minutes", type: "min", target: (w) => (w ? 30 : 20) },
-  { key: "movement", label: "Movement", type: "bool" },
-  { key: "family_call", label: "Family check-in", type: "bool" },
-  { key: "video", label: "Teaching video uploaded (one take)", type: "bool" },
-  { key: "no_junk_spend", label: "Zero junk spending", type: "bool" },
-  { key: "spend_birr", label: "Spending today (local currency)", type: "count" },
-  { key: "urges_redirected", label: "Distractions redirected", type: "count" },
-];
 
 export default function Today() {
   const [info, setInfo] = useState<DayInfo | null>(null);
@@ -54,6 +33,9 @@ export default function Today() {
   const [busy, setBusy] = useState(false);
   const [trackerLoaded, setTrackerLoaded] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [teamIssues, setTeamIssues] = useState<MyIssue[]>([]);
+  const [completing, setCompleting] = useState<number | null>(null);
+  const routine = useRoutine();
 
   useEffect(() => {
     dayInfo()
@@ -82,6 +64,7 @@ export default function Today() {
       })
       .catch((e) => setLoadErr(`Could not load the agenda: ${String(e)}`));
     void refresh();
+    team.myIssues().then(setTeamIssues).catch(() => setTeamIssues([]));
     window.addEventListener("focus", refresh);
     window.addEventListener("mizan:data-changed", refresh);
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -92,21 +75,20 @@ export default function Today() {
     };
   }, []);
 
-  if (!info) return <p role={loadErr ? "alert" : "status"} className={loadErr ? "text-danger" : "text-ink-dim"}>{loadErr || "Loading today..."}</p>;
+  if (!info || !routine) return <p role={loadErr ? "alert" : "status"} className={loadErr ? "text-danger" : "text-ink-dim"}>{loadErr || "Loading today..."}</p>;
   const weekend = info.dow === "Saturday" || info.dow === "Sunday";
-  const isFriday = info.dow === "Friday";
+  const items = routine.items.filter((it) => visibleOn(it, info.date));
   const set = (key: string, value: string) => setRow((r) => ({ ...r, [key]: value }));
 
   const beforeStart = info.day < 1;
-  const { score, failed } = scoreRow({ ...row, date: info.date });
+  const { score, max, failed } = scoreDay(routine, { ...row, date: info.date });
 
   const save = async () => {
     if (busy) return;
     setBusy(true);
     setSaveErr("");
     const fields: Record<string, string> = { day: String(info.day) };
-    for (const it of ITEMS) fields[it.key] = row[it.key] ?? "";
-    if (row.weight_kg) fields.weight_kg = row.weight_kg;
+    for (const it of items) fields[it.key] = row[it.key] ?? "";
     if (row.shipped) fields.shipped = row.shipped;
     fields.score = String(score); // same rule as scripts/score.py, so stats work without --write
     try {
@@ -118,6 +100,19 @@ export default function Today() {
       setSaveErr(`save failed: ${String(e)}`);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const complete = async (task: Task) => {
+    setCompleting(task.id);
+    try {
+      await updateTask(task.id, { status: "done" });
+      setTasks((ts) => ts.filter((t) => t.id !== task.id));
+      window.dispatchEvent(new Event("mizan:data-changed"));
+    } catch (e) {
+      setLoadErr(`Could not complete the task: ${String(e)}`);
+    } finally {
+      setCompleting(null);
     }
   };
 
@@ -133,14 +128,9 @@ export default function Today() {
           {beforeStart ? "A fresh start" : `Day ${info.day}`}
         </h2>
         <p className="mt-1 text-sm text-ink-dim">
-          {info.dow.toLowerCase()} · {info.date} ·{" "}
-          {beforeStart ? (
-            <>pre-start · day 1 = {info.day1}</>
-          ) : (
-            <>
-              week {info.week} · your ongoing LifeOS
-            </>
-          )}
+          {new Date(`${info.date}T12:00:00`).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} ·{" "}
+          {beforeStart ? <>Day 1 is {info.day1}</> : <>Week {info.week}</>}
+          {upcoming.length > 0 && !beforeStart && <> · {plan.filter((e) => new Date(e.end) > nowD).length} blocks left today</>}
         </p>
       </header>
       {loadErr && <p role="alert" className="text-sm text-danger">{loadErr}</p>}
@@ -163,11 +153,12 @@ export default function Today() {
       <div className="flex flex-col gap-6">
         {/* ── left: the checklist ─────────────────────────── */}
         <details className="order-2 space-y-3">
-          <summary className="hd">Daily routine · {score}/9 · expand to check in</summary>
-          <PixelBar value={score} max={9} segments={9} color={score === 9 ? "var(--color-gold)" : "var(--color-accent)"} />
+          <summary className="hd">Daily routine · {score}/{max} · expand to check in</summary>
+          <PixelBar value={score} max={Math.max(1, max)} segments={Math.max(1, max)} color={score === max ? "var(--color-gold)" : "var(--color-accent)"} />
           <fieldset disabled={!trackerLoaded || busy || beforeStart} className="panel divide-y divide-edge/40 p-2">
-            {ITEMS.map((it) => {
-              const below = it.target && Number(row[it.key] ?? 0) < it.target(weekend);
+            {items.map((it) => {
+              const target = it.type === "min" || it.type === "count" ? targetOf(it, weekend) : null;
+              const below = target !== null && Number(row[it.key] ?? 0) < target;
               return (
                 <div key={it.key} className="flex items-center justify-between gap-6 px-3 py-2.5">
                   <span className="text-sm">{it.label}</span>
@@ -182,13 +173,14 @@ export default function Today() {
                     </button>
                   ) : (
                     <span className="flex shrink-0 items-center gap-2">
-                      {it.target && (
-                        <span className="text-[10px] text-ink-dim">/{it.target(weekend)}</span>
+                      {target !== null && (
+                        <span className="text-[10px] text-ink-dim">/{target}</span>
                       )}
                       <input
                         aria-label={it.label}
                         type="number"
                         min={0}
+                        step={it.type === "number" ? "0.1" : "1"}
                         value={row[it.key] ?? ""}
                         onChange={(e) => set(it.key, e.target.value)}
                         className={`w-20 border bg-panel-2 px-2 py-1 text-right text-sm tabular-nums ${
@@ -200,19 +192,6 @@ export default function Today() {
                 </div>
               );
             })}
-            {isFriday && (
-              <div className="flex items-center justify-between gap-6 px-3 py-2.5">
-                <span className="text-sm text-gold">Friday weigh-in (kg)</span>
-                <input
-                  aria-label="Friday weigh-in in kilograms"
-                  type="number"
-                  step="0.1"
-                  value={row.weight_kg ?? ""}
-                  onChange={(e) => set("weight_kg", e.target.value)}
-                  className="w-20 border border-edge bg-panel-2 px-2 py-1 text-right text-sm"
-                />
-              </div>
-            )}
           </fieldset>
           <div className="flex flex-wrap items-center gap-4">
             <button
@@ -249,7 +228,8 @@ export default function Today() {
                   {upcoming.map((e) => (
                     <li key={e.id} className={`flex gap-3 px-1 ${current?.id === e.id ? "text-accent" : e.done ? "text-ink-dim line-through" : ""}`}>
                       <span className="w-16 shrink-0 text-[11px] tabular-nums text-ink-dim">{fmt(e.start)}</span>
-                      <Link to="/planner" className="min-w-0 break-words hover:underline">{current?.id === e.id ? "Now: " : ""}{e.title}</Link>
+                      <Link to="/planner" className="min-w-0 flex-1 break-words hover:underline">{current?.id === e.id ? "Now: " : ""}{e.title}</Link>
+                      {current?.id === e.id && <Link to={focusLink({ title: e.title, est_min: Math.max(5, Math.round((new Date(e.end).getTime() - nowD.getTime()) / 60000)) })} className="shrink-0 text-xs underline">Focus</Link>}
                     </li>
                   ))}
                 </ul>
@@ -261,16 +241,36 @@ export default function Today() {
           <div>
             <div className="hd">Tasks to focus on</div>
             <div className="panel mt-3 divide-y divide-edge p-3 text-sm">
-              {tasks.slice(0, 5).map((task) => <Link key={task.id} to="/tasks" className="flex flex-wrap items-center justify-between gap-2 py-2 hover:text-accent">
-                <span className="min-w-0 break-words">{task.title}</span>
-                <span className="text-xs text-ink-dim">{task.priority === 1 ? "Important · " : ""}{task.due ? `Due ${task.due.slice(0, 10)}` : "No deadline"}</span>
-              </Link>)}
+              {tasks.slice(0, 5).map((task) => <div key={task.id} className="flex items-center gap-2 py-1">
+                <label className="flex min-h-10 min-w-8 shrink-0 items-center justify-center">
+                  <input type="checkbox" aria-label={`Complete ${task.title}`} disabled={completing === task.id} onChange={() => void complete(task)} className="h-4 w-4" />
+                </label>
+                <Link to="/tasks" className="min-w-0 flex-1 break-words hover:text-accent">{task.title}
+                  <span className="block text-xs text-ink-dim">{task.priority === 1 ? "Important · " : ""}{task.due ? `Due ${task.due.slice(0, 10)}` : "No deadline"} · {task.est_min} min</span>
+                </Link>
+                <Link to={focusLink(task)} aria-label={`Focus on ${task.title}`} className="flex min-h-10 shrink-0 items-center border border-edge px-2 text-xs text-ink-dim hover:border-accent hover:text-accent">Focus</Link>
+              </div>)}
               {!tasks.length && <p className="py-2 text-ink-dim">No open tasks. <Link to="/tasks" className="text-accent">Add a task</Link></p>}
             </div>
             <Link to="/projects" className="mt-2 inline-block text-xs text-accent">Manage projects</Link>
           </div>
 
-          <details>
+          {teamIssues.length > 0 && (
+            <div>
+              <div className="hd">Assigned to you · team</div>
+              <div className="panel mt-3 divide-y divide-edge p-3 text-sm">
+                {teamIssues.sort((a, b) => (a.priority || 9) - (b.priority || 9)).slice(0, 6).map((i) => (
+                  <Link key={`${i.ws}-${i.id}`} to={`/team/${i.ws}/mine?issue=${i.id}`} className="flex flex-wrap items-center justify-between gap-2 py-2 hover:text-accent">
+                    <span className="min-w-0 break-words"><span className="text-ink-dim">{i.key}</span> {i.title}</span>
+                    <span className="text-xs text-ink-dim">{i.priority ? `${priorityOf(i.priority).label} · ` : ""}{statusLabel(i.status)}{i.due ? ` · due ${i.due.slice(0, 10)}` : ""}</span>
+                  </Link>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] text-ink-dim">From your team workspaces. Read-only here; your personal data is not shared.</p>
+            </div>
+          )}
+
+          {routine.showPrayers && <details>
             <summary className="hd">Prayer times {source === "live" ? "· live" : source === "cache" ? "· cached" : "· offline"}</summary>
             <div className="panel mt-3 divide-y divide-edge/40">
               {prayers &&
@@ -282,7 +282,7 @@ export default function Today() {
                 ))}
             </div>
             {source !== "live" && source !== "cache" && <p className="mt-2 text-xs text-ink-dim">Using local estimates when available. Set a location in Settings for live times.</p>}
-          </details>
+          </details>}
 
           <div>
             <div className="hd">log</div>

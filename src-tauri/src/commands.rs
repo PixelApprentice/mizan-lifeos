@@ -1,4 +1,4 @@
-// Commands bridging the disc system (tracker.csv, logs, day math) and task breakdown.
+// Commands bridging the disc system (tracker.csv, logs, day math) and the site shield.
 
 use crate::lifeos::{self, disc_path, DayInfo, LifeosConfig};
 use std::collections::HashMap;
@@ -60,10 +60,23 @@ pub fn upsert_tracker_row(
     if lines.is_empty() {
         return Err("tracker.csv is empty (no header)".into());
     }
-    let header: Vec<String> = lines[0].split(',').map(String::from).collect();
-    if fields.keys().any(|k| !header.contains(k)) {
+    let mut header: Vec<String> = lines[0].split(',').map(String::from).collect();
+    // Custom routine items get their own column, appended once. Older rows read it as empty.
+    let column_ok = |k: &str| {
+        k.len() <= 40 && k.starts_with(|c: char| c.is_ascii_lowercase()) && k.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    };
+    let mut new_columns: Vec<&String> = fields.keys().filter(|k| !header.contains(k)).collect();
+    if new_columns.iter().any(|k| !column_ok(k)) {
         return Err("unknown tracker column in update".into());
     }
+    if header.len() + new_columns.len() > 200 {
+        return Err("the tracker has too many columns".into());
+    }
+    new_columns.sort();
+    for k in new_columns {
+        header.push(k.clone());
+    }
+    lines[0] = header.join(",");
     // Commas would corrupt the CSV; the notes field is the only free-text one.
     if fields.values().any(|v| v.contains([',', '\n', '\r'])) {
         return Err("field values must not contain commas or newlines".into());
@@ -173,60 +186,6 @@ pub fn append_to_log(date: String, text: String, disc: Option<String>) -> Result
     writeln!(f, "\n{text}").map_err(|e| e.to_string())
 }
 
-/// Break tasks into local steps without sending their text to a provider.
-#[tauri::command]
-pub fn breakdown_task(title: String, kind: String, use_ai: bool) -> Result<Vec<String>, String> {
-    if use_ai {
-        return Err("Remote task decomposition is disabled. Use local template steps.".into());
-    }
-    if title.trim().is_empty() {
-        return Err("Task title is required.".into());
-    }
-    Ok(template_breakdown(&title, &kind))
-}
-
-fn template_breakdown(title: &str, kind: &str) -> Vec<String> {
-    let t = title.trim();
-    match kind {
-        "code" => vec![
-            format!(
-                "Write the spec for \"{t}\" in the README (what, data model, endpoints/screens)"
-            ),
-            format!("Draw the data model / component sketch for \"{t}\" on paper"),
-            format!("Write one failing test for the core of \"{t}\""),
-            format!("Implement the smallest slice of \"{t}\" that makes the test pass"),
-            format!("Refactor: every function ≤ 25 lines, named as verbs"),
-            format!("Commit + push \"{t}\"; update README with how to run"),
-            format!("Teach it: one-take video on the trickiest part of \"{t}\""),
-        ],
-        "study" => vec![
-            format!("Skim \"{t}\" once for structure (10 min, no notes)"),
-            format!("Read \"{t}\" and write 5 recall questions"),
-            format!("Close the material; answer your questions from memory"),
-            format!("Apply \"{t}\" in the current project today"),
-            format!("Explain \"{t}\" in the daily video"),
-        ],
-        "freelance" => vec![
-            format!("Define done for \"{t}\" in one sentence the client would sign"),
-            format!("List the 3 screens/endpoints \"{t}\" actually needs"),
-            format!("Build slice 1 of \"{t}\""),
-            format!("Demo to the client / get feedback"),
-            format!("Invoice or next-step agreed"),
-        ],
-        "deen" => vec![
-            format!("Read \"{t}\" (text + meaning)"),
-            format!("Write 3 lessons in your own words"),
-            format!("Act on one lesson today; note where"),
-        ],
-        _ => vec![
-            format!("Define done for \"{t}\" in one sentence"),
-            format!("List the concrete steps of \"{t}\" (max 5)"),
-            format!("Do step 1 for 25 minutes"),
-            format!("Review and schedule the rest"),
-        ],
-    }
-}
-
 // ---------- Permanent ("purity shield") blocklist — always on, independent of deep mode ----------
 
 /// Merge a downloaded hosts/domains list with the user's own entries and apply it to the
@@ -303,4 +262,28 @@ fn is_domain(s: &str) -> bool {
         && s != "localhost"
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracker_accepts_custom_routine_columns() {
+        let dir = std::env::temp_dir().join(format!("mizan-tracker-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let disc = Some(dir.display().to_string());
+        upsert_tracker_row("2025-01-02".into(), HashMap::from([("movement".into(), "1".into())]), disc.clone()).unwrap();
+        upsert_tracker_row("2025-01-03".into(), HashMap::from([("reading_min".into(), "25".into())]), disc.clone()).unwrap();
+        let rows = read_tracker(disc.clone()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["reading_min"], "");
+        assert_eq!(rows[1]["reading_min"], "25");
+        assert_eq!(rows[0]["movement"], "1");
+        for bad in ["Bad", "1x", "a-b", "a,b"] {
+            assert!(upsert_tracker_row("2025-01-04".into(), HashMap::from([(bad.to_string(), "1".into())]), disc.clone()).is_err(), "{bad}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

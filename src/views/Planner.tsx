@@ -2,6 +2,7 @@
 // auto-plan fit every open task into the day's free work windows — around prayers and
 // whatever is already booked. Blocks move; minutes don't shrink.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TimeField } from "../components/DurationWheel";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -196,7 +197,7 @@ export default function Planner() {
     const kind = dayKind(planDate);
     const win = (await getSetting(`plan_windows_${kind}`)) || DEFAULT_WINDOWS[kind];
     const now = new Date();
-    const notBefore = planDate === todayStr() ? now.getHours() * 60 + now.getMinutes() : undefined;
+    const notBefore = planDate === todayStr() ? Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5 : undefined;
     const candidates = plannableTasks(all, evs, todayStr()).filter(
       (t) => projectFilter === "all" || (projectFilter === "none" ? t.project_id == null : String(t.project_id) === projectFilter),
     );
@@ -286,8 +287,9 @@ export default function Planner() {
         title: (done ? "✓ " : "") + e.title,
         start: e.start,
         end: e.end,
-        color: e.color || undefined,
-        textColor: e.color && e.color !== TEMPLATE_COLOR ? "#000" : undefined,
+        color: e.color === TEMPLATE_COLOR ? "var(--color-panel-2)" : e.color || undefined,
+        borderColor: e.color === TEMPLATE_COLOR ? "var(--color-edge)" : undefined,
+        textColor: e.color === TEMPLATE_COLOR ? "var(--color-ink)" : e.color ? "#000" : undefined,
         classNames: done ? ["opacity-40"] : [],
       };
     }),
@@ -418,11 +420,20 @@ export default function Planner() {
           allDaySlot={false}
           slotMinTime="00:00:00"
           slotMaxTime="24:00:00"
-          scrollTime="08:00:00"
+          scrollTime={`${String(Math.min(Math.max(new Date().getHours() - 1, 6), 18)).padStart(2, "0")}:00:00`}
           nowIndicator
           editable
           droppable
           eventTimeFormat={{ hour: "numeric", minute: "2-digit", hour12: true }}
+          eventMinHeight={30}
+          eventShortHeight={44}
+          eventContent={(arg) => arg.event.display === "background" ? true : (
+            // Title first so short blocks still say what they are; the time follows if it fits.
+            <div className="fc-mizan-event" title={`${arg.event.title} · ${arg.timeText}`}>
+              <span className="fc-mizan-title">{arg.event.title}</span>
+              {arg.timeText && <span className="fc-mizan-time">{arg.timeText}</span>}
+            </div>
+          )}
           slotLabelFormat={{ hour: "numeric", hour12: true }}
           events={calEvents}
           datesSet={(arg) => setRange({ start: arg.start, end: arg.end })}
@@ -485,7 +496,7 @@ export default function Planner() {
               onChange={(e) => setEdit({ ...edit, title: e.target.value })}
               className="w-full border border-edge bg-panel-2 px-3 py-2 text-sm outline-none focus:border-accent"
             />
-            <div className="flex flex-wrap items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-start gap-2 text-sm">
               <input
                 aria-label="Event start date"
                 type="date"
@@ -493,22 +504,10 @@ export default function Planner() {
                 onChange={(e) => setEdit({ ...edit, date: e.target.value })}
                 className="border border-edge bg-panel-2 px-2 py-1.5 outline-none focus:border-accent"
               />
-              <input
-                aria-label="Event start time"
-                type="time"
-                value={edit.start}
-                onChange={(e) => setEdit({ ...edit, start: e.target.value })}
-                className="border border-edge bg-panel-2 px-2 py-1.5 tabular-nums outline-none focus:border-accent"
-              />
+              <TimeField label="Event start time" value={edit.start} change={(start) => setEdit({ ...edit, start })} />
               <span className="text-ink-dim">→</span>
               <input aria-label="Event end date" type="date" value={edit.endDate} onChange={(e) => setEdit({ ...edit, endDate: e.target.value })} className="border border-edge bg-panel-2 px-2 py-1.5" />
-              <input
-                aria-label="Event end time"
-                type="time"
-                value={edit.end}
-                onChange={(e) => setEdit({ ...edit, end: e.target.value })}
-                className="border border-edge bg-panel-2 px-2 py-1.5 tabular-nums outline-none focus:border-accent"
-              />
+              <TimeField label="Event end time" value={edit.end} change={(end) => setEdit({ ...edit, end })} />
             </div>
             <div className="flex flex-wrap justify-between gap-2">
               <div className="flex gap-2">

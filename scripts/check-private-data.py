@@ -20,6 +20,7 @@ DATED_NOTE = re.compile(r"^\d{4}-\d{2}-\d{2}\.md$")
 DATABASE = re.compile(r"\.(?:db|sqlite3?)(?:-(?:wal|shm|journal))?$")
 SOURCE_SUFFIXES = {".ts", ".tsx", ".js", ".mjs", ".css", ".html", ".rs", ".toml", ".json", ".yaml", ".yml", ".md", ".py", ".sh", ".policy", ".lock", ".svg"}
 EXTENSIONLESS = {".gitignore", ".githooks/pre-commit", "src-tauri/.gitignore", "helper/mizan-hosts", "helper/mizan-hosts-perm", "LICENSE"}
+ANDROID_FILES = {"android/.gitignore", "android/gradlew", "android/gradlew.bat", "android/gradle/wrapper/gradle-wrapper.jar"}
 
 
 def git(*args):
@@ -29,7 +30,11 @@ def git(*args):
 def issues(path, content):
     name = path.name
     is_icon = path.parts[:2] == ("src-tauri", "icons") and path.suffix in {".png", ".ico", ".icns"}
-    if path.suffix not in SOURCE_SUFFIXES and path.as_posix() not in EXTENSIONLESS and not is_icon and path.as_posix() != "templates/tracker.csv":
+    is_android = path.parts[0] == "android" and (
+        path.suffix in {".kt", ".kts", ".xml", ".properties"}
+        or path.as_posix() in ANDROID_FILES
+    )
+    if path.suffix not in SOURCE_SUFFIXES and path.as_posix() not in EXTENSIONLESS and not is_icon and not is_android and path.as_posix() != "templates/tracker.csv":
         yield "not an approved source/template file type"
     if path.as_posix() == "templates/tracker.csv":
         if len(content.decode("utf-8").splitlines()) != 1 or not content.startswith(b"date,day,"):
