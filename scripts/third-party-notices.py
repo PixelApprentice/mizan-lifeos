@@ -39,10 +39,12 @@ def npm():
 
 
 def cargo():
-    out = subprocess.check_output(
-        ["cargo", "metadata", "--format-version", "1", "--offline", "--filter-platform", "x86_64-unknown-linux-gnu"],
-        cwd=ROOT / "src-tauri", stderr=subprocess.DEVNULL,
-    )
+    args = ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", "x86_64-unknown-linux-gnu"]
+    try:
+        out = subprocess.check_output(args + ["--offline"], cwd=ROOT / "src-tauri", stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        # Fresh machines (CI) have no crate cache yet; let cargo download the index.
+        out = subprocess.check_output(args, cwd=ROOT / "src-tauri")
     meta = json.loads(out)
     pkgs = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
