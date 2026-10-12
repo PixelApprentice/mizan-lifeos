@@ -1,0 +1,90 @@
+/* Cinema style: a dark studio, real 3D devices, big quiet type on top. */
+:root {
+  --bg: #050607;
+  --fg: #f5f5f7;
+  --muted: #8e8e93;
+  --accent: #5eead4;
+  --accent2: #60a5fa;
+  --accent3: #c084fc;
+  --font: "Adwaita Sans", "Inter", "SF Pro Display", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+body { font-family: var(--font); color: var(--fg); -webkit-font-smoothing: antialiased; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+#gl { position: absolute; inset: 0; width: 1920px; height: 1080px; will-change: filter; }
+
+/* Light that seems to spill into the lens. */
+.bloom { position: absolute; border-radius: 50%; filter: blur(140px); mix-blend-mode: screen; pointer-events: none; will-change: transform, opacity; }
+.bloom.a { width: 1200px; height: 700px; left: -300px; top: -320px; background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.bloom.b { width: 1100px; height: 700px; right: -320px; top: -260px; background: color-mix(in srgb, var(--accent3) 24%, transparent); }
+.bloom.c { width: 1400px; height: 520px; left: 260px; bottom: -380px; background: color-mix(in srgb, var(--accent2) 22%, transparent); }
+
+.vignette { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
+.grain { position: absolute; inset: -64px; pointer-events: none; mix-blend-mode: overlay; opacity: 0.09; }
+.flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, #fff, rgba(220, 255, 245, 0.6) 40%, rgba(160, 220, 255, 0) 75%); opacity: 0; mix-blend-mode: screen; }
+.black { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.bars { position: absolute; left: 0; right: 0; height: 0; background: #000; pointer-events: none; }
+.bars.top { top: 0; }
+.bars.bottom { bottom: 0; }
+
+.scene { position: absolute; inset: 0; display: none; will-change: opacity, transform, filter; }
+.scrim { position: absolute; inset: 0; pointer-events: none; }
+.scrim.left { background: linear-gradient(90deg, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.35) 34%, transparent 58%); }
+.scrim.right { background: linear-gradient(270deg, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.35) 34%, transparent 58%); }
+.scrim.top { background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.25) 30%, transparent 48%); }
+.scrim.bottom { background: linear-gradient(0deg, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.3) 28%, transparent 46%); }
+
+/* Type */
+.h { font-weight: 700; letter-spacing: -0.038em; line-height: 1.03; text-shadow: 0 2px 30px rgba(0, 0, 0, 0.35); }
+.h.xxl { font-size: 168px; }
+.h.xl { font-size: 136px; }
+.h.l { font-size: 104px; }
+.h.m { font-size: 84px; }
+.h.s { font-size: 64px; }
+.dim { color: var(--muted); }
+.grad {
+  background: linear-gradient(100deg, var(--accent) 0%, #7dd3fc 38%, var(--accent2) 62%, var(--accent3) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+}
+.w { display: inline-block; white-space: pre; will-change: opacity, transform, filter; }
+.line { display: block; width: fit-content; }
+.center .line { margin-inline: auto; }
+.kicker { font-size: 28px; font-weight: 600; letter-spacing: 0.02em; color: var(--accent); margin-bottom: 24px; }
+.body { font-size: 34px; line-height: 1.38; color: #a1a1a6; font-weight: 500; letter-spacing: -0.01em; max-width: 640px; margin-top: 30px; }
+.body b { color: var(--fg); font-weight: 600; }
+.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.copy { position: absolute; display: flex; flex-direction: column; justify-content: center; }
+.copy.left { left: 140px; top: 0; bottom: 0; width: 720px; }
+.copy.right { right: 120px; top: 0; bottom: 0; width: 680px; }
+.copy.top { left: 0; right: 0; top: 92px; align-items: center; text-align: center; }
+.copy.top .line { margin-inline: auto; }
+.copy.bottom { left: 0; right: 0; bottom: 96px; align-items: center; text-align: center; }
+.copy.bottom .line { margin-inline: auto; }
+
+/* Lists and tiles sit on glass over the blurred studio. */
+.tiles { position: absolute; left: 150px; right: 150px; top: 330px; bottom: 100px; display: grid; gap: 22px; }
+.tile {
+  border-radius: 30px; padding: 34px 36px; display: flex; flex-direction: column; justify-content: flex-end;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 30px 60px -30px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(24px) saturate(1.3);
+  will-change: transform, opacity;
+}
+.tile .big { font-size: 64px; font-weight: 750; letter-spacing: -0.04em; line-height: 1; }
+.tile .label { font-size: 25px; font-weight: 500; color: #a1a1a6; margin-top: 12px; line-height: 1.3; }
+.grid-title { position: absolute; left: 150px; top: 110px; }
+
+/* Logo and end card */
+.appicon {
+  width: 200px; height: 200px; border-radius: 48px; display: grid; place-items: center;
+  background: linear-gradient(160deg, #1c2422, #0b0f0e);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 40px 90px -30px rgba(94, 234, 212, 0.45);
+  will-change: transform, opacity, filter;
+}
+.appicon svg { width: 136px; height: 136px; shape-rendering: crispEdges; }
+.wordmark { font-size: 156px; font-weight: 800; letter-spacing: -0.05em; margin-top: 30px; line-height: 1; }
+.tagline { font-size: 40px; font-weight: 500; color: #a1a1a6; margin-top: 18px; letter-spacing: -0.01em; }
+.fine { font-size: 26px; color: #8e8e93; font-weight: 500; letter-spacing: 0.01em; margin-top: 16px; }
+.pill { display: inline-block; margin-top: 44px; padding: 17px 36px; border-radius: 999px; background: var(--fg); color: #000; font-size: 28px; font-weight: 650; }
+.caption { position: absolute; left: 0; right: 0; bottom: 84px; text-align: center; font-size: 36px; font-weight: 500; color: #c7c7cc; letter-spacing: 0.01em; }

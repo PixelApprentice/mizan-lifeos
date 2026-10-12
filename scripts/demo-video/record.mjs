@@ -6,6 +6,8 @@
 //                                (raw material for the trailer: pnpm demo:trailer)
 //   add --theme light            record the light theme instead → recordings/footage-light/
 //                                (raw material for the keynote film: pnpm demo:film)
+//   add --dpr 2 --out <dir>      sharper pixels for deep camera push-ins, written to <dir>
+//                                (raw material for the 3D cinema cut: pnpm demo:cinema)
 //
 // Desktop scenes run in the browser preview (demo data, nothing touches your real
 // database). Phone scenes run the real companion page against a mock desktop.
@@ -32,10 +34,11 @@ const PHONE_SCALE = 0.74;
 const FADE = 0.6;
 // Footage mode: no captions or cards, recorded at 1.5x pixel density for sharp zooms.
 const FOOTAGE = process.argv.includes("--footage");
-const DPR = FOOTAGE ? 1.5 : 1;
+const DPR = FOOTAGE ? Number(process.argv.includes("--dpr") ? process.argv[process.argv.indexOf("--dpr") + 1] : 1.5) : 1;
 const VIDEO = { width: SIZE.width * DPR, height: SIZE.height * DPR };
 const THEME = process.argv.includes("--theme") ? process.argv[process.argv.indexOf("--theme") + 1] : "dark";
-const FOOTAGE_DIR = path.join(OUT_DIR, THEME === "light" ? "footage-light" : "footage");
+const OUT_ARG = process.argv.includes("--out") ? process.argv[process.argv.indexOf("--out") + 1] : null;
+const FOOTAGE_DIR = OUT_ARG ? path.resolve(OUT_ARG) : path.join(OUT_DIR, THEME === "light" ? "footage-light" : "footage");
 
 // ---------------- helpers ----------------
 
@@ -70,14 +73,32 @@ async function centerOf(locator) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
+// Input events of the current take (clicks, keys, drags, wheel ticks), saved next to the
+// marks so the soundtrack can put a sound on each one.
+let EVENTS = null;
+const event = (kind, delay = 0) => EVENTS?.list.push({ t: +((Date.now() - EVENTS.born) / 1000 + delay).toFixed(3), kind });
+
+// Moves like a hand: eases in and out along a slight arc, slower for longer distances.
 async function glide(page, x, y, ms = 650) {
-  await page.mouse.move(x, y, { steps: Math.max(8, Math.round(ms / 16)) });
+  const from = page.__pos || { x: SIZE.width / 2, y: SIZE.height / 2 };
+  const dx = x - from.x, dy = y - from.y, dist = Math.hypot(dx, dy);
+  const dur = Math.max(ms * 0.6, Math.min(ms * 1.3, 260 + dist * 0.85));
+  const n = Math.max(10, Math.round(dur / 16));
+  const bow = Math.min(50, dist * 0.1) * (Math.round(x + y) % 2 ? 1 : -1);
+  const nx = -dy / (dist || 1), ny = dx / (dist || 1);
+  for (let i = 1; i <= n; i++) {
+    const k = i / n, e = k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2, b = Math.sin(Math.PI * e) * bow;
+    await page.mouse.move(from.x + dx * e + nx * b, from.y + dy * e + ny * b);
+    await sleep(14);
+  }
+  page.__pos = { x, y };
 }
 
 async function click(page, locator, pause = 250) {
   const p = await centerOf(locator);
   await glide(page, p.x, p.y);
   await sleep(140);
+  event("click");
   await page.mouse.down();
   await sleep(70);
   await page.mouse.up();
@@ -86,6 +107,7 @@ async function click(page, locator, pause = 250) {
 
 async function type(page, locator, text, delay = 42) {
   await click(page, locator, 120);
+  [...text].forEach((c, i) => event(c === " " ? "space" : "key", (i * delay) / 1000));
   await page.keyboard.type(text, { delay });
 }
 
@@ -93,10 +115,13 @@ async function drag(page, handle, to) {
   const from = await centerOf(handle);
   await glide(page, from.x, from.y);
   await sleep(200);
+  event("grab");
   await page.mouse.down();
   await page.mouse.move(from.x + 4, from.y + 6, { steps: 4 });
+  page.__pos = { x: from.x + 4, y: from.y + 6 };
   await glide(page, to.x, to.y, 1100);
   await sleep(350);
+  event("drop");
   await page.mouse.up();
   await sleep(600);
 }
@@ -105,6 +130,7 @@ async function wheel(page, locator, total, step = 44, every = 70) {
   const p = await centerOf(locator);
   await glide(page, p.x, p.y);
   for (let moved = 0; Math.abs(moved) < Math.abs(total); moved += Math.sign(total) * step) {
+    event("tick");
     await page.mouse.wheel(0, Math.sign(total) * step);
     await sleep(every);
   }
@@ -218,7 +244,8 @@ async function stopCapture(capture, context, page) {
 // Named timestamps (seconds into the raw recording) that the trailer cuts on.
 function marker(born) {
   const marks = {};
-  return { marks, mark: (name) => { marks[name] = +((Date.now() - born) / 1000).toFixed(2); } };
+  EVENTS = { born, list: [] };
+  return { marks, events: EVENTS.list, mark: (name) => { marks[name] = +((Date.now() - born) / 1000).toFixed(2); } };
 }
 
 // ---------------- scenes ----------------
@@ -230,7 +257,7 @@ async function recordDesktop(browser) {
   const page = await context.newPage();
   const born = Date.now();
   const capture = await startCapture(page, born, "desktop");
-  const { marks, mark } = marker(born);
+  const { marks, mark, events } = marker(born);
   await page.goto(`${APP}/#/`);
   await page.evaluate((clean) => window.__demo.card(clean ? { kicker: "", title: "" } : {
     kicker: "Meet Mizan",
@@ -370,7 +397,7 @@ async function recordDesktop(browser) {
 
   mark("end");
   const file = await stopCapture(capture, context, page);
-  return { file, trim, marks };
+  return { file, trim, marks, events };
 }
 
 async function recordPhone(browser, mock) {
@@ -379,7 +406,7 @@ async function recordPhone(browser, mock) {
   const page = await context.newPage();
   const born = Date.now();
   const capture = await startCapture(page, born, "phone");
-  const { marks, mark } = marker(born);
+  const { marks, mark, events } = marker(born);
   await page.goto(`${MOCK}/stage`);
   const trim = (Date.now() - born) / 1000 + 0.15;
   const phone = page.frameLocator("#phone");
@@ -438,7 +465,7 @@ async function recordPhone(browser, mock) {
   if (!FOOTAGE) await sleep(6500);
 
   const file = await stopCapture(capture, context, page);
-  return { file, trim, received: mock.received, marks, phoneRect };
+  return { file, trim, received: mock.received, marks, phoneRect, events };
 }
 
 // ---------------- assembly ----------------
@@ -475,6 +502,7 @@ function saveFootage(desktop, phone) {
     desktop: desktop.marks,
     phone: phone.marks,
     phoneRect: phone.phoneRect,
+    events: { desktop: desktop.events, phone: phone.events },
   };
   writeFileSync(path.join(FOOTAGE_DIR, "marks.json"), JSON.stringify(marks, null, 2) + "\n");
 }

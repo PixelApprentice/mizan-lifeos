@@ -11,11 +11,16 @@
 // with a soundtrack synthesized by audio.mjs. Needs ffmpeg and playwright-core's Chromium.
 //
 // config.style picks the look: "trailer" (default; retro, punchy, chiptune-ish) or
-// "keynote" (keynote.js + keynote.css + keynote-audio.mjs; bright, calm, product-launch).
+// "keynote" (keynote.js + keynote.css + keynote-audio.mjs; bright, calm, product-launch) or
+// "cinema" (cinema.js + cinema.css + cinema-audio.mjs; 3D laptop and phone rendered with
+// three.js on the GPU, one continuous camera, an arranged score with interface sounds).
+//
+// --workers N renders the timeline in N parallel browsers (default 3) and joins the parts.
 
 import { chromium } from "playwright-core";
 import { spawn, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import http from "node:http";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,6 +30,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STYLES = {
   trailer: { js: "runtime.js", css: "styles.css", audio: "./audio.mjs" },
   keynote: { js: "keynote.js", css: "keynote.css", audio: "./keynote-audio.mjs" },
+  cinema: { js: "cinema.js", css: "cinema.css", audio: "./cinema-audio.mjs", three: true },
 };
 const DEFAULT_ENERGY = { logo: 0, words: 1, collapse: 1, montage: 3, footage: 2, phone: 2, counters: 2, outro: 0 };
 const DEFAULT_THEME = {
@@ -137,8 +143,95 @@ function cutClip(config, clip, name, dur, cache, fps, sceneId) {
 
 function pageHtml(theme, style) {
   const vars = Object.entries(theme).filter(([, v]) => typeof v === "string").map(([k, v]) => `--${k}:${v}`).join(";");
+  const js = readFileSync(path.join(HERE, style.js), "utf8");
+  const script = style.three
+    ? `<script type="importmap">{"imports":{"three":"./three/three.module.js","three/addons/":"./three/addons/"}}</script><script type="module">${js}</script>`
+    : `<script>${js}</script>`;
   return `<!doctype html><html><head><meta charset="utf-8"><style>:root{${vars}}\n${readFileSync(path.join(HERE, style.css), "utf8")}</style></head>
-<body><div id="stage"></div><script>${readFileSync(path.join(HERE, style.js), "utf8")}</script></body></html>`;
+<body><div id="stage"></div>${script}</body></html>`;
+}
+
+// three.js is loaded from the project's node_modules into the page cache, so the
+// page works offline and the version is the one in the lockfile.
+function copyThree(cache) {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.resolve("three"))), "..");
+  const files = ["build/three.module.js", "build/three.core.js", "examples/jsm/geometries/RoundedBoxGeometry.js",
+    "examples/jsm/environments/RoomEnvironment.js", "examples/jsm/objects/Reflector.js"];
+  for (const f of files) {
+    const dest = path.join(cache, "three", f.startsWith("build/") ? path.basename(f) : f.replace("examples/jsm/", "addons/"));
+    mkdirSync(path.dirname(dest), { recursive: true });
+    copyFileSync(path.join(root, f), dest);
+  }
+}
+
+// ES modules need http(s); file:// pages can't import. Serves the cache dir on localhost.
+async function serve(dir) {
+  const types = { ".html": "text/html", ".js": "text/javascript", ".jpg": "image/jpeg", ".png": "image/png", ".json": "application/json" };
+  const server = http.createServer((req, res) => {
+    const file = path.join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname));
+    if (!file.startsWith(dir) || !existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404).end(); return; }
+    res.writeHead(200, { "content-type": types[path.extname(file)] || "application/octet-stream" });
+    createReadStream(file).pipe(res);
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { url: `http://127.0.0.1:${server.address().port}`, close: () => server.close() };
+}
+
+// Puts a sound on every click, keystroke and drag recorded with the footage: each event
+// is mapped through the clip that shows it (from, speed) onto the film's timeline.
+function foleyCues(config, scenes) {
+  const cues = [];
+  for (const s of scenes) {
+    const clips = Object.entries(s).filter(([k, v]) => v && typeof v === "object" && !Array.isArray(v) && v.source && k !== "cam");
+    for (const [key, c] of clips) {
+      const events = config.footage?.[c.source]?.events;
+      if (!events || c.foley === false) continue;
+      const speed = c.speed ?? 1;
+      for (const e of events) {
+        const t = s.start + (e.t - c.from) / speed;
+        if (t >= s.start + 0.15 && t < s.start + s.dur - 0.1) cues.push({ t: +t.toFixed(3), kind: e.kind, pan: key === "phone" ? 0.45 : -0.1, gain: c.foley ?? 1 });
+      }
+    }
+  }
+  return cues.sort((a, b) => a.t - b.t);
+}
+
+async function openPage(browser, url, payload) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  page.on("pageerror", (e) => console.error("page error:", e.message));
+  page.on("console", (m) => m.type() === "error" && console.error("page console:", m.text()));
+  await page.goto(url);
+  await page.waitForFunction(() => window.trailer, null, { timeout: 30000 });
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate((p) => window.trailer.init(p), payload);
+  const cdp = await page.context().newCDPSession(page);
+  const shot = async (format) => Buffer.from((await cdp.send("Page.captureScreenshot", { format, quality: format === "jpeg" ? 95 : undefined, optimizeForSpeed: true })).data, "base64");
+  return { page, shot };
+}
+
+// Screenshots are full-range BT.601 JPEGs; the film is tagged and converted to
+// limited-range BT.709 so players don't shift the colours.
+const COLOR = ["-vf", "scale=in_color_matrix=bt601:in_range=pc:out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv",
+  "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
+
+async function renderSegment({ launch, url, payload, fps, first, count, file, label, progress }) {
+  const browser = await chromium.launch(launch);
+  try {
+    const { page, shot } = await openPage(browser, url, payload);
+    const enc = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
+      "-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-",
+      ...COLOR, "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-tune", "film", file], { stdio: ["pipe", "inherit", "inherit"] });
+    const done = new Promise((res, rej) => enc.on("close", (code) => (code === 0 ? res() : rej(new Error(`ffmpeg exited ${code} (${label})`)))));
+    for (let i = 0; i < count; i++) {
+      await page.evaluate((x) => window.trailer.frame(x), (first + i) / fps);
+      if (!enc.stdin.write(await shot("jpeg"))) await new Promise((r) => enc.stdin.once("drain", r));
+      progress(label, i + 1);
+    }
+    enc.stdin.end();
+    await done;
+  } finally {
+    await browser.close();
+  }
 }
 
 export async function render(configPath) {
@@ -147,73 +240,87 @@ export async function render(configPath) {
   const style = STYLES[config.style || "trailer"];
   if (!style) throw new Error(`Unknown style "${config.style}" (use ${Object.keys(STYLES).join(" or ")})`);
   const { synthesize } = await import(style.audio);
-  const theme = config.style === "keynote" ? { ...config.theme } : { ...DEFAULT_THEME, ...config.theme };
+  const theme = config.style === "trailer" || !config.style ? { ...DEFAULT_THEME, ...config.theme } : { ...config.theme };
   const { scenes, total } = timeline(config);
   const out = path.resolve(config.out || "recordings/trailer.mp4");
   const cache = path.join(path.dirname(out), ".trailer-cache", path.basename(out, ".mp4"));
   mkdirSync(cache, { recursive: true });
 
   console.log(`Timeline: ${scenes.length} scenes, ${total.toFixed(1)} s at ${config.bpm} BPM`);
+  const foley = foleyCues(config, scenes);
   cutFootage(config, scenes, cache, fps);
   writeFileSync(path.join(cache, "index.html"), pageHtml(theme, style));
-  const payload = { brand: config.brand, bpm: config.bpm, fps, total, theme, icon: readIcon(config.icon), scenes };
+  if (style.three) copyThree(cache);
+  const payload = { brand: config.brand, bpm: config.bpm, fps, total, theme, icon: readIcon(config.icon), scenes, world: config.world };
 
-  const browser = await chromium.launch({ executablePath: findChromium() });
+  // WebGL styles want the real GPU; headless Chromium otherwise falls back to SwiftShader.
+  const launch = { executablePath: findChromium(), args: style.three ? ["--use-angle=" + (process.env.TRAILER_ANGLE || "gl"), "--ignore-gpu-blocklist", "--enable-gpu"] : [] };
+  const server = await serve(cache);
+  const url = `${server.url}/index.html`;
   try {
-    const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-    page.on("pageerror", (e) => console.error("page error:", e.message));
-    await page.goto(pathToFileURL(path.join(cache, "index.html")).href);
-    await page.evaluate(() => document.fonts.ready);
-    await page.evaluate((p) => window.trailer.init(p), payload);
-    const cdp = await page.context().newCDPSession(page);
-    const shot = async (format) => Buffer.from((await cdp.send("Page.captureScreenshot", { format, quality: format === "jpeg" ? 92 : undefined, optimizeForSpeed: true })).data, "base64");
-
     const stills = arg("--stills");
     if (stills) {
-      const times = stills === "auto" ? scenes.map((s) => +(s.start + s.dur * 0.62).toFixed(2)) : stills.split(",").map(Number);
-      const dir = path.join(path.dirname(out), `${path.basename(out, ".mp4")}-stills`);
-      rmSync(dir, { recursive: true, force: true });
-      mkdirSync(dir, { recursive: true });
-      const files = [];
-      for (const t of times) {
-        await page.evaluate((x) => window.trailer.frame(x), t);
-        const f = path.join(dir, `t${t.toFixed(2).padStart(6, "0")}.png`);
-        writeFileSync(f, await shot("png"));
-        files.push(f);
+      const browser = await chromium.launch(launch);
+      try {
+        const { page, shot } = await openPage(browser, url, payload);
+        if (style.three) console.log("GPU:", await page.evaluate(() => window.trailer.gpu?.()));
+        const times = stills === "auto" ? scenes.map((s) => +(s.start + s.dur * 0.62).toFixed(2)) : stills.split(",").map(Number);
+        const dir = path.join(path.dirname(out), `${path.basename(out, ".mp4")}-stills`);
+        rmSync(dir, { recursive: true, force: true });
+        mkdirSync(dir, { recursive: true });
+        const files = [];
+        for (const t of times) {
+          await page.evaluate((x) => window.trailer.frame(x), t);
+          const f = path.join(dir, `t${t.toFixed(2).padStart(6, "0")}.png`);
+          writeFileSync(f, await shot("png"));
+          files.push(f);
+        }
+        const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols);
+        ffmpeg(["-framerate", "1", "-pattern_type", "glob", "-i", path.join(dir, "t*.png"),
+          "-vf", `scale=640:-1,tile=${cols}x${rows}:padding=6:color=0x222222`, "-frames:v", "1", path.join(dir, "sheet.png")]);
+        console.log(`Stills: ${path.relative(process.cwd(), dir)}/ (${files.length} + sheet.png)`);
+      } finally {
+        await browser.close();
       }
-      const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols);
-      ffmpeg(["-framerate", "1", "-pattern_type", "glob", "-i", path.join(dir, "t*.png"),
-        "-vf", `scale=640:-1,tile=${cols}x${rows}:padding=6:color=0x222222`, "-frames:v", "1", path.join(dir, "sheet.png")]);
-      console.log(`Stills: ${path.relative(process.cwd(), dir)}/ (${files.length} + sheet.png)`);
       return;
     }
 
     const [from, to] = (arg("--range") || `0,${total}`).split(",").map(Number);
-    console.log("Synthesizing soundtrack…");
+    console.log(`Synthesizing soundtrack… (${foley.length} interface sounds)`);
     const wav = path.join(cache, "music.wav");
-    writeWav(wav, synthesize({ bpm: config.bpm, total, scenes, chords: config.music?.chords, tail: 0 }));
+    writeWav(wav, synthesize({ bpm: config.bpm, total, scenes, chords: config.music?.chords, tail: 0, foley }));
 
     const frames = Math.round((Math.min(to, total) - from) * fps);
+    const first = Math.round(from * fps);
+    const workers = Math.max(1, Math.min(Number(arg("--workers") || config.workers || 3), Math.ceil(frames / fps)));
     const target = arg("--range") ? out.replace(/\.mp4$/, `-${from}-${to}.mp4`) : out;
-    const enc = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
-      "-f", "image2pipe", "-framerate", String(fps), "-c:v", "mjpeg", "-i", "-",
-      "-ss", String(from), "-i", wav, "-map", "0:v", "-map", "1:a",
-      "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", target], { stdio: ["pipe", "inherit", "inherit"] });
-    const done = new Promise((res, rej) => enc.on("close", (code) => (code === 0 ? res() : rej(new Error(`ffmpeg exited ${code}`)))));
-    const started = Date.now();
-    for (let i = 0; i < frames; i++) {
-      await page.evaluate((x) => window.trailer.frame(x), from + i / fps);
-      if (!enc.stdin.write(await shot("jpeg"))) await new Promise((r) => enc.stdin.once("drain", r));
-      if (i % (fps * 5) === 0) process.stdout.write(`\r  frame ${i}/${frames} (${((Date.now() - started) / 1000).toFixed(0)} s)`);
+    const segDir = path.join(cache, "segments");
+    rmSync(segDir, { recursive: true, force: true });
+    mkdirSync(segDir, { recursive: true });
+    const started = Date.now(), done = {};
+    const progress = (label, n) => {
+      done[label] = n;
+      const sum = Object.values(done).reduce((a, b) => a + b, 0);
+      if (sum % fps === 0 || sum === frames) {
+        const el = (Date.now() - started) / 1000;
+        process.stdout.write(`\r  frame ${sum}/${frames} · ${el.toFixed(0)} s · ~${((el / sum) * (frames - sum)).toFixed(0)} s left   `);
+      }
+    };
+    const per = Math.ceil(frames / workers), segs = [];
+    for (let w = 0; w < workers; w++) {
+      const a = w * per, count = Math.min(per, frames - a);
+      if (count > 0) segs.push({ first: first + a, count, file: path.join(segDir, `seg${w}.mp4`), label: `w${w}` });
     }
-    enc.stdin.end();
-    await done;
+    console.log(`Rendering ${frames} frames with ${segs.length} worker${segs.length > 1 ? "s" : ""}…`);
+    await Promise.all(segs.map((sg) => renderSegment({ launch, url, payload, fps, progress, ...sg })));
     process.stdout.write("\n");
+    writeFileSync(path.join(segDir, "list.txt"), segs.map((sg) => `file '${sg.file}'`).join("\n"));
+    ffmpeg(["-f", "concat", "-safe", "0", "-i", path.join(segDir, "list.txt"), "-ss", String(from), "-i", wav,
+      "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", target]);
     ffmpeg(["-ss", String(config.poster ?? Math.min(total - 0.5, (scenes[0]?.dur ?? 3) * 0.9)), "-i", target, "-frames:v", "1", target.replace(/\.mp4$/, "-poster.png")]);
-    console.log(`Done: ${path.relative(process.cwd(), target)} (${(frames / fps).toFixed(1)} s)`);
+    console.log(`Done: ${path.relative(process.cwd(), target)} (${(frames / fps).toFixed(1)} s, ${((Date.now() - started) / 1000).toFixed(0)} s to render)`);
   } finally {
-    await browser.close();
+    server.close();
   }
 }
 
