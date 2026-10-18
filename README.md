@@ -261,6 +261,7 @@ pnpm demo:footage:light  # record light-theme footage for the launch film
 pnpm demo:film           # 84 s bright launch film → recordings/mizan-film.mp4
 pnpm demo:footage:cinema # record sharper (2x) footage with input events for the cinema cut
 pnpm demo:cinema         # 78 s 3D cinema cut → recordings/mizan-cinema.mp4 (uses the GPU)
+pnpm demo:models         # save the film's MacBook Pro and iPhone models → assets/models/*.glb
 ```
 
 Add `--stills auto` to any of them (`pnpm demo:cinema --stills auto`) for a quick contact

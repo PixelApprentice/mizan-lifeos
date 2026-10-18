@@ -28,11 +28,8 @@ body { font-family: var(--font); color: var(--fg); -webkit-font-smoothing: antia
 .h.m { font-size: 72px; }
 .h.s { font-size: 56px; }
 .dim { color: var(--muted); }
-.grad {
-  background: linear-gradient(100deg, var(--accent) 0%, #12a37b 30%, var(--accent2) 70%, var(--accent3) 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
+/* One brand accent, solid. No gradient text. */
+.grad { color: var(--accent); }
 .w { display: inline-block; white-space: pre; will-change: opacity, transform, filter; }
 .line { display: block; width: fit-content; }
 .center .line { margin-inline: auto; }

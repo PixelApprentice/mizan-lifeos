@@ -30,7 +30,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STYLES = {
   trailer: { js: "runtime.js", css: "styles.css", audio: "./audio.mjs" },
   keynote: { js: "keynote.js", css: "keynote.css", audio: "./keynote-audio.mjs" },
-  cinema: { js: "cinema.js", css: "cinema.css", audio: "./cinema-audio.mjs", three: true },
+  cinema: { js: "cinema.js", css: "cinema.css", audio: "./cinema-audio.mjs", three: true, modules: ["devices.js"] },
 };
 const DEFAULT_ENERGY = { logo: 0, words: 1, collapse: 1, montage: 3, footage: 2, phone: 2, counters: 2, outro: 0 };
 const DEFAULT_THEME = {
@@ -153,19 +153,21 @@ function pageHtml(theme, style) {
 
 // three.js is loaded from the project's node_modules into the page cache, so the
 // page works offline and the version is the one in the lockfile.
-function copyThree(cache) {
+// Copies three.js (plus the addons the runtimes use) and the style's own modules into the cache.
+export function copyThree(cache, { modules = [], addons = [] } = {}) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.resolve("three"))), "..");
   const files = ["build/three.module.js", "build/three.core.js", "examples/jsm/geometries/RoundedBoxGeometry.js",
-    "examples/jsm/environments/RoomEnvironment.js", "examples/jsm/objects/Reflector.js"];
+    "examples/jsm/environments/RoomEnvironment.js", "examples/jsm/objects/Reflector.js", ...addons.map((a) => `examples/jsm/${a}`)];
   for (const f of files) {
     const dest = path.join(cache, "three", f.startsWith("build/") ? path.basename(f) : f.replace("examples/jsm/", "addons/"));
     mkdirSync(path.dirname(dest), { recursive: true });
     copyFileSync(path.join(root, f), dest);
   }
+  for (const m of modules) copyFileSync(path.join(HERE, m), path.join(cache, m));
 }
 
 // ES modules need http(s); file:// pages can't import. Serves the cache dir on localhost.
-async function serve(dir) {
+export async function serve(dir) {
   const types = { ".html": "text/html", ".js": "text/javascript", ".jpg": "image/jpeg", ".png": "image/png", ".json": "application/json" };
   const server = http.createServer((req, res) => {
     const file = path.join(dir, decodeURIComponent(new URL(req.url, "http://x").pathname));
@@ -250,7 +252,7 @@ export async function render(configPath) {
   const foley = foleyCues(config, scenes);
   cutFootage(config, scenes, cache, fps);
   writeFileSync(path.join(cache, "index.html"), pageHtml(theme, style));
-  if (style.three) copyThree(cache);
+  if (style.three) copyThree(cache, { modules: style.modules });
   const payload = { brand: config.brand, bpm: config.bpm, fps, total, theme, icon: readIcon(config.icon), scenes, world: config.world };
 
   // WebGL styles want the real GPU; headless Chromium otherwise falls back to SwiftShader.

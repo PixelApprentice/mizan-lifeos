@@ -18,8 +18,9 @@
     "demo:trailer": "node scripts/demo-video/trailer/render.mjs scripts/demo-video/mizan.trailer.mjs",
     "demo:footage:light": "node scripts/demo-video/record.mjs --footage --theme light",
     "demo:film": "node scripts/demo-video/trailer/render.mjs scripts/demo-video/mizan.keynote.mjs",
-    "demo:footage:cinema": "node scripts/demo-video/record.mjs --footage --theme light --dpr 2 --out recordings/footage-cinema",
+    "demo:footage:cinema": "node scripts/demo-video/record.mjs --footage --theme light --dpr 2 --size 1512x945 --out recordings/footage-cinema",
     "demo:cinema": "node scripts/demo-video/trailer/render.mjs scripts/demo-video/mizan.cinema.mjs",
+    "demo:models": "node scripts/demo-video/export-models.mjs",
     "android": "bash scripts/build-apk.sh"
   },
   "dependencies": {

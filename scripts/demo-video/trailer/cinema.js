@@ -1,20 +1,22 @@
-// Cinema style runtime: a laptop and a phone in a dark studio, rendered with three.js,
-// filmed by one continuous camera, with big quiet type on top.
+// Cinema style runtime: a 14" MacBook Pro and an iPhone 18 Pro in a dark studio, rendered
+// with three.js, filmed by one continuous camera, with big quiet type on top.
+// world.mac: "spaceBlack" | "silver"; world.iphone: "silver" | "black" | "glacier" | "burgundy".
+// Laptop footage should be recorded at 1512x945 CSS px (the screen below the notch band).
 // The renderer calls `trailer.init(config)` once, then `await trailer.frame(t)` per frame.
 // Everything is a pure function of t, so any frame can be rendered on its own.
 //
 // Scene types: title, shot, list, grid, end. Every scene can also drive the 3D world:
 //   cam:    [{ at, on: "laptop"|"phone"|"point", focus: [u, v], point: [x, y, z], dist, yaw, pitch,
 //              roll, fov, shift: [x, y], ease }]  (at = seconds into the scene; values carry over)
-//   world:  { exposure, blur, dim, bloom, bars }  eased in over `fly` seconds
+//   world:  { exposure, blur, dim, bars }  eased in over `fly` seconds
 //   lid:    [[at, open 0..1], …]
 //   screen: footage clip on the laptop, or screenShow: "logo" | "off"
 //   phone:  footage clip on the phone (the phone rises into view while scenes have one)
 //   flash:  true = a soft flash of light as the scene starts (pairs with a drop in the music)
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { Reflector } from "three/addons/objects/Reflector.js";
+import { buildMacBookPro, buildIPhone } from "./devices.js";
 
 const W = 1920, H = 1080;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -189,92 +191,57 @@ const SCENES = {
 
 const world = {};
 
-function displayMaterial(planeAspect, radius) {
+// Screen shader: two footage textures crossfaded, cover-cropped (keeping the top of the
+// picture), rounded corners (separate top and bottom radius), an optional black band at the
+// top (the MacBook Pro menu-bar strip that holds the camera notch) and a light sweep.
+function displayMaterial(planeAspect, radiusTop, radiusBottom = radiusTop) {
   return new THREE.ShaderMaterial({
     toneMapped: false,
     uniforms: {
       tA: { value: null }, tB: { value: null }, mixAB: { value: 0 }, bright: { value: 0 }, sweep: { value: -2 },
-      planeAspect: { value: planeAspect }, aAspect: { value: 16 / 9 }, bAspect: { value: 16 / 9 }, radius: { value: radius },
+      planeAspect: { value: planeAspect }, aAspect: { value: 16 / 9 }, bAspect: { value: 16 / 9 },
+      radiusT: { value: radiusTop }, radiusB: { value: radiusBottom }, insetA: { value: 0 }, insetB: { value: 0 },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-      uniform sampler2D tA, tB; uniform float mixAB, bright, sweep, planeAspect, aAspect, bAspect, radius;
+      uniform sampler2D tA, tB; uniform float mixAB, bright, sweep, planeAspect, aAspect, bAspect, radiusT, radiusB, insetA, insetB;
       varying vec2 vUv;
-      // Fill the screen, keep the top of the picture (apps are read from the top).
-      vec2 cover(vec2 uv, float ta) {
-        if (ta > planeAspect) uv.x = 0.5 + (uv.x - 0.5) * planeAspect / ta;
-        else uv.y = 1.0 - (1.0 - uv.y) * ta / planeAspect;
-        return uv;
+      vec3 sampleFit(sampler2D t, float ta, float inset) {
+        if (vUv.y > 1.0 - inset) return vec3(0.0);
+        vec2 uv = vec2(vUv.x, vUv.y / (1.0 - inset));
+        float pa = planeAspect / (1.0 - inset);
+        if (ta > pa) uv.x = 0.5 + (uv.x - 0.5) * pa / ta;
+        else uv.y = 1.0 - (1.0 - uv.y) * ta / pa;
+        return texture2D(t, uv).rgb;
       }
       void main() {
         vec2 p = (vUv - 0.5) * vec2(planeAspect, 1.0);
-        vec2 b = vec2(planeAspect, 1.0) * 0.5 - radius;
-        if (length(max(abs(p) - b, 0.0)) - radius > 0.0) discard;
-        vec3 a = texture2D(tA, cover(vUv, aAspect)).rgb;
-        vec3 c = texture2D(tB, cover(vUv, bAspect)).rgb;
-        vec3 col = mix(a, c, mixAB);
+        float r = p.y > 0.0 ? radiusT : radiusB;
+        vec2 b = vec2(planeAspect, 1.0) * 0.5 - r;
+        if (length(max(abs(p) - b, 0.0)) - r > 0.0) discard;
+        vec3 col = mix(sampleFit(tA, aAspect, insetA), sampleFit(tB, bAspect, insetB), mixAB);
         float band = exp(-pow((vUv.x * 0.8 + (1.0 - vUv.y) * 0.5 - sweep) * 5.0, 2.0));
-        col = col * bright + band * 0.10 * bright;
+        col = col * bright + band * 0.08 * bright;
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
       }`,
   });
 }
 
-function keyboardTexture() {
-  const c = document.createElement("canvas");
-  c.width = 2048; c.height = 1420;
-  const g = c.getContext("2d");
-  g.fillStyle = "#b9bcc2"; g.fillRect(0, 0, c.width, c.height);
-  const well = { x: 150, y: 70, w: 1748, h: 720 };
-  g.fillStyle = "#2a2c30"; g.beginPath(); g.roundRect(well.x - 14, well.y - 14, well.w + 28, well.h + 28, 22); g.fill();
-  const rows = [14, 14, 13, 12, 11];
-  const kh = (well.h - 6 * 8) / 6;
-  for (let r = 0; r < 6; r++) {
-    const n = r === 0 ? 14 : rows[r - 1] ?? 10;
-    const y = well.y + r * (kh + 8);
-    const h = r === 0 ? kh * 0.6 : kh;
-    if (r === 5) {
-      const keys = [1, 1, 1, 1.4, 5.2, 1.4, 1, 1, 1];
-      const total = keys.reduce((a, b) => a + b, 0);
-      let x = well.x;
-      for (const k of keys) {
-        const w = (well.w - 8 * (keys.length - 1)) * (k / total);
-        g.fillStyle = "#121315"; g.beginPath(); g.roundRect(x, y, w, h, 12); g.fill();
-        x += w + 8;
-      }
-      continue;
-    }
-    const w = (well.w - 8 * (n - 1)) / n;
-    for (let i = 0; i < n; i++) { g.fillStyle = "#121315"; g.beginPath(); g.roundRect(well.x + i * (w + 8), y, w, h, 12); g.fill(); }
-  }
-  const pad = { w: 760, h: 470 };
-  const grd = g.createLinearGradient(0, 860, 0, 860 + pad.h);
-  grd.addColorStop(0, "#c4c7cc"); grd.addColorStop(1, "#b2b5bb");
-  g.fillStyle = grd; g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = 3;
-  g.beginPath(); g.roundRect((c.width - pad.w) / 2, 860, pad.w, pad.h, 26); g.fill(); g.stroke();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
-
 async function logoTexture(brand) {
   await document.fonts.load('800 200px "Adwaita Sans"').catch(() => {});
   const c = document.createElement("canvas");
-  c.width = 1920; c.height = 1080;
+  c.width = 1512; c.height = 982;
   const g = c.getContext("2d");
-  const bg = g.createRadialGradient(960, 520, 50, 960, 540, 1100);
-  bg.addColorStop(0, "#0f1816"); bg.addColorStop(1, "#000");
-  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#1a1b1d"; g.fillRect(0, 0, c.width, c.height);
   const ic = ctx.icon;
   if (ic) {
-    const s = 300 / ic.size, x0 = 960 - 150, y0 = 250;
+    const s = 260 / ic.size, x0 = 756 - 130, y0 = 250;
     for (const r of ic.rects) { g.fillStyle = r.fill; g.fillRect(x0 + r.x * s, y0 + r.y * s, r.w * s + 0.5, r.h * s + 0.5); }
   }
   g.fillStyle = "#f5f5f7"; g.textAlign = "center";
-  g.font = '800 170px "Adwaita Sans", sans-serif';
-  g.fillText(brand || "Mizan", 960, 760);
+  g.font = '700 132px "Adwaita Sans", sans-serif';
+  g.fillText(brand || "Mizan", 756, 690);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -296,16 +263,6 @@ function radialTexture(stops) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
-}
-
-function roundedRect(w, h, r) {
-  const s = new THREE.Shape();
-  s.moveTo(-w / 2 + r, -h / 2);
-  s.lineTo(w / 2 - r, -h / 2); s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
-  s.lineTo(w / 2, h / 2 - r); s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
-  s.lineTo(-w / 2 + r, h / 2); s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
-  s.lineTo(-w / 2, -h / 2 + r); s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
-  return s;
 }
 
 async function buildWorld(cfg) {
@@ -338,10 +295,10 @@ async function buildWorld(cfg) {
   key.shadow.radius = 4;
   key.shadow.bias = -0.0004;
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x9fd8ff, 2.2);
+  const rim = new THREE.DirectionalLight(0xeef3ff, 2.6);
   rim.position.set(4, 5, -7);
   scene.add(rim);
-  const rim2 = new THREE.DirectionalLight(0xd8b4fe, 1.4);
+  const rim2 = new THREE.DirectionalLight(0xfff4e8, 1.6);
   rim2.position.set(-6, 3, -5);
   scene.add(rim2);
 
@@ -360,76 +317,28 @@ async function buildWorld(cfg) {
   scene.add(shadowFloor);
   // A pool of light under the products.
   const pool = new THREE.Mesh(new THREE.PlaneGeometry(14, 9), new THREE.MeshBasicMaterial({
-    map: radialTexture([[0, "rgba(120,200,190,0.20)"], [0.45, "rgba(80,120,160,0.08)"], [1, "rgba(0,0,0,0)"]]),
+    map: radialTexture([[0, "rgba(255,255,255,0.10)"], [0.5, "rgba(255,255,255,0.035)"], [1, "rgba(0,0,0,0)"]]),
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
   }));
   pool.rotation.x = -Math.PI / 2;
   pool.position.set(0.6, 0.006, 0.2);
   scene.add(pool);
 
-  // Laptop: aluminium base with keyboard, hinged lid with a 16:9 display.
-  const metal = new THREE.MeshStandardMaterial({ color: 0xc9ccd2, metalness: 0.92, roughness: 0.3, envMapIntensity: 1.1 });
-  const laptop = new THREE.Group();
+  const mac = buildMacBookPro({ finish: cfg.world?.mac, screen: displayMaterial });
+  const { group: laptop, lid, display: laptopDisplay, SW, SH, MENU } = mac;
   scene.add(laptop);
-  const base = new THREE.Mesh(new RoundedBoxGeometry(3.1, 0.09, 2.15, 4, 0.04), metal);
-  base.position.y = 0.046;
-  base.castShadow = true;
-  laptop.add(base);
-  const deck = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.05), new THREE.MeshStandardMaterial({ map: keyboardTexture(), metalness: 0.6, roughness: 0.45 }));
-  deck.rotation.x = -Math.PI / 2;
-  deck.position.y = 0.0915;
-  laptop.add(deck);
-  const lid = new THREE.Group();
-  lid.position.set(0, 0.092, -1.035);
-  laptop.add(lid);
-  const lidBody = new THREE.Mesh(new RoundedBoxGeometry(3.1, 2.05, 0.045, 4, 0.02), metal);
-  lidBody.position.set(0, 1.025, -0.0225);
-  lidBody.castShadow = true;
-  lid.add(lidBody);
-  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(3.04, 1.99), new THREE.MeshStandardMaterial({ color: 0x050505, metalness: 0.2, roughness: 0.25 }));
-  bezel.position.set(0, 1.025, 0.001);
-  lid.add(bezel);
-  const SW = 2.88, SH = SW * 9 / 16;
-  const laptopDisplay = new THREE.Mesh(new THREE.PlaneGeometry(SW, SH), displayMaterial(SW / SH, 0.004));
-  laptopDisplay.position.set(0, 1.07, 0.002);
-  lid.add(laptopDisplay);
-  const glass = new THREE.Mesh(new THREE.PlaneGeometry(3.04, 1.99), new THREE.MeshStandardMaterial({ color: 0x000000, metalness: 0, roughness: 0.06, transparent: true, opacity: 0.16, envMapIntensity: 2.2 }));
-  glass.position.set(0, 1.025, 0.004);
-  lid.add(glass);
-
-  // Phone: titanium band, rounded glass display, dynamic island.
-  const PW = 0.82, PH = 1.7;
-  const phone = new THREE.Group();
+  const iphone = buildIPhone({ finish: cfg.world?.iphone, screen: displayMaterial });
+  const { group: phone, display: phoneDisplay, DW, DH } = iphone;
   scene.add(phone);
-  const bodyGeo = new THREE.ExtrudeGeometry(roundedRect(PW, PH, 0.13), { depth: 0.05, bevelEnabled: true, bevelThickness: 0.016, bevelSize: 0.016, bevelSegments: 5, curveSegments: 24 });
-  bodyGeo.translate(0, 0, -0.025);
-  const titanium = new THREE.MeshStandardMaterial({ color: 0x3a3d42, metalness: 0.9, roughness: 0.32, envMapIntensity: 1.2 });
-  const phoneBody = new THREE.Mesh(bodyGeo, titanium);
-  phoneBody.castShadow = true;
-  phone.add(phoneBody);
-  const front = new THREE.Mesh(new THREE.ShapeGeometry(roundedRect(PW - 0.01, PH - 0.01, 0.125), 24), new THREE.MeshStandardMaterial({ color: 0x020202, roughness: 0.15 }));
-  front.position.z = 0.0425;
-  phone.add(front);
-  const DW = PW - 0.07, DH = PH - 0.07;
-  const phoneDisplay = new THREE.Mesh(new THREE.PlaneGeometry(DW, DH), displayMaterial(DW / DH, 0.1 / DH));
-  phoneDisplay.position.z = 0.043;
-  phone.add(phoneDisplay);
-  const island = new THREE.Mesh(new THREE.ShapeGeometry(roundedRect(0.2, 0.058, 0.029), 12), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-  island.position.set(0, PH / 2 - 0.09, 0.0435);
-  phone.add(island);
-  const phoneGlass = new THREE.Mesh(new THREE.ShapeGeometry(roundedRect(PW - 0.01, PH - 0.01, 0.125), 24), new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.05, transparent: true, opacity: 0.14, envMapIntensity: 2.4 }));
-  phoneGlass.position.z = 0.0445;
-  phone.add(phoneGlass);
 
   const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 80);
 
   Object.assign(world, {
-    renderer, scene, camera, laptop, lid, laptopDisplay, phone, phoneDisplay, key, maxAniso, SW, SH, DW, DH,
+    renderer, scene, camera, laptop, lid, laptopDisplay, phone, phoneDisplay, key, maxAniso, SW, SH, DW, DH, menu: MENU,
     black: blackTexture(), logo: await logoTexture(cfg.brand),
   });
 
   // Overlays on top of the picture.
-  world.blooms = ["a", "b", "c"].map((k) => el("div", `bloom ${k}`, stage));
   el("div", "vignette", stage);
   world.layer = el("div", "", stage);
   world.flash = el("div", "flash", stage);
@@ -491,14 +400,14 @@ function screenSource(s, which, lt) {
   const clip = which === "laptop" ? s.screen : s.phone;
   if (clip) {
     const { entry, wait } = clipFrame(clip, lt);
-    return { tex: entry.tex, aspect: () => entry.aspect, wait };
+    return { tex: entry.tex, aspect: () => entry.aspect, wait, inset: which === "laptop" ? world.menu : 0 };
   }
-  if (which === "laptop" && s.screenShow === "logo") return { tex: world.logo, aspect: () => 16 / 9 };
+  if (which === "laptop" && s.screenShow === "logo") return { tex: world.logo, aspect: () => 1512 / 982, inset: 0 };
   // The phone sinks away during the next scene; keep its last frame up instead of a black screen.
   const prev = cfg.scenes[cfg.scenes.indexOf(s) - 1];
   if (which === "phone" && prev?.phone && lt < 2.5) {
     const { entry, wait } = clipFrame(prev.phone, prev.dur);
-    return { tex: entry.tex, aspect: () => entry.aspect, wait };
+    return { tex: entry.tex, aspect: () => entry.aspect, wait, inset: 0 };
   }
   return { tex: world.black, aspect: () => 16 / 9, off: true };
 }
@@ -506,7 +415,7 @@ function screenSource(s, which, lt) {
 // ---------- timeline tracks ----------
 
 let cfg, scenes, camKeys, worldKeys, lidKeys;
-const WORLD0 = { exposure: 1, blur: 0, dim: 0, bloom: 0.5, bars: 0 };
+const WORLD0 = { exposure: 1, blur: 0, dim: 0, bars: 0 };
 const CAM0 = { on: "point", point: [0, 0.6, 0], focus: [0.5, 0.5], dist: 6, yaw: 0, pitch: 12, roll: 0, fov: 30, shift: [0, 0] };
 
 function buildTracks() {
@@ -619,6 +528,7 @@ function setDisplay(mesh, which, t) {
   }
   const u = mesh.material.uniforms;
   u.tA.value = A.tex; u.tB.value = B.tex; u.mixAB.value = mix;
+  u.insetA.value = A.inset ?? 0; u.insetB.value = B.inset ?? 0;
   // Aspect ratios are known once the frames have decoded.
   mesh.userData.aspects = () => { u.aAspect.value = A.aspect(); u.bAspect.value = B.aspect(); };
   // Boot: the screen glows up as the lid opens.
@@ -656,11 +566,6 @@ async function frame(t) {
   world.renderer.toneMappingExposure = wv("exposure");
   const blur = wv("blur"), dim = wv("dim");
   world.renderer.domElement.style.filter = blur > 0.2 || dim > 0.01 ? `blur(${blur}px) brightness(${1 - dim})` : "none";
-  const bloom = wv("bloom");
-  world.blooms.forEach((e, i) => {
-    e.style.opacity = bloom;
-    e.style.transform = `translate(${Math.sin(t * 0.13 + i * 2) * 200}px, ${Math.cos(t * 0.11 + i) * 110}px)`;
-  });
   const bars = wv("bars") * 120;
   for (const e of world.bars) e.style.height = `${bars}px`;
 

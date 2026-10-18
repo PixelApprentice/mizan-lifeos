@@ -13,6 +13,7 @@ All notable changes to Mizan. Format: [Keep a Changelog](https://keepachangelog.
 - Board cards have a ⋯ menu: move up or down, move to another column, set priority, focus, schedule and delete.
 - Launch film: `pnpm demo:footage:light` records light-theme footage and `pnpm demo:film` renders a bright, calm product film (the trailer renderer now has a "keynote" style).
 - Cinema cut: `pnpm demo:cinema` renders a 3D film (three.js laptop and phone, one continuous camera, arranged score with interface sounds). Videos now render in parallel and are tagged BT.709.
+- The cinema cut films a 14" MacBook Pro and an iPhone 18 Pro (procedural models, also saved as `.glb` in `assets/models/` via `pnpm demo:models`), with one brand accent instead of gradient text.
 
 ### Changed
 - Board cards are compact: a ⠿ drag handle, the title and one line of details. Actions appear when you point at or tab into a card.

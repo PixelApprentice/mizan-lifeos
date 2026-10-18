@@ -7,6 +7,7 @@
 //   add --theme light            record the light theme instead → recordings/footage-light/
 //                                (raw material for the keynote film: pnpm demo:film)
 //   add --dpr 2 --out <dir>      sharper pixels for deep camera push-ins, written to <dir>
+//   add --size 1512x945          another viewport size (CSS pixels)
 //                                (raw material for the 3D cinema cut: pnpm demo:cinema)
 //
 // Desktop scenes run in the browser preview (demo data, nothing touches your real
@@ -29,7 +30,10 @@ const VITE_PORT = 5210;
 const MOCK_PORT = 5211;
 const APP = `http://127.0.0.1:${VITE_PORT}`;
 const MOCK = `http://127.0.0.1:${MOCK_PORT}`;
-const SIZE = { width: 1280, height: 720 };
+// --size WxH changes the CSS viewport (the cinema cut uses 1512x945: a 14" MacBook Pro
+// screen below the menu-bar band that holds the camera notch).
+const SIZE_ARG = process.argv.includes("--size") ? process.argv[process.argv.indexOf("--size") + 1].split("x").map(Number) : [1280, 720];
+const SIZE = { width: SIZE_ARG[0], height: SIZE_ARG[1] };
 const PHONE_SCALE = 0.74;
 const FADE = 0.6;
 // Footage mode: no captions or cards, recorded at 1.5x pixel density for sharp zooms.
