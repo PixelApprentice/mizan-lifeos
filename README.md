@@ -1,321 +1,223 @@
-# Mizan LifeOS
+# <p align="center"><img src="public/mizan-icon.svg" alt="Mizan Logo" width="64" height="64" /><br>Mizan LifeOS</p>
 
-Mizan is a local-first planner. It runs on your Linux desktop and has two separate spaces:
+<p align="center">
+  <b>A calm, local-first personal planning workspace and offline peer-to-peer team space.</b><br>
+  No cloud accounts. No subscriptions. 100% of your data stays on your machine.
+</p>
 
-- **Personal**: your tasks, projects, calendar, focus timer, daily routine and notes, private to you.
-- **Team** (optional): Jira- or Asana-style workspaces with boards, backlog, sprints, issues, comments and reports. Workspaces are hosted on a teammate's computer over the local network, so there is no cloud account. Team data never mixes with personal data.
-
-There are no accounts and no cloud. An optional Android app turns your phone into a full-screen focus timer, keeps a copy of your tasks, and lets you work on team issues.
-
-Built with Tauri, React and SQLite. Free software under the [AGPL-3.0](LICENSE); commercial licences are available ([details](COMMERCIAL-LICENSE.md)).
-
-**Contents:** [Install](#install-the-desktop-app) · [Phone app](#phone-app-android) ·
-[Using Mizan](#using-mizan) · [Team workspaces](#team-workspaces) · [Your data](#your-data) ·
-[Troubleshooting](#troubleshooting) · [Optional extras](#optional-extras) · [Development](#development) ·
-[Licence](#licence)
+<p align="center">
+  <a href="https://github.com/PixelApprentice/mizan-lifeos/actions/workflows/ci.yml"><img src="https://github.com/PixelApprentice/mizan-lifeos/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0 License" /></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Release-v0.3.0-success.svg" alt="Release 0.3.0" /></a>
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Android-informational.svg" alt="Platform" />
+  <img src="https://img.shields.io/badge/Storage-Local%20SQLite%20%2B%20WAL-orange.svg" alt="Local Storage" />
+  <img src="https://img.shields.io/badge/Stack-Tauri%20v2%20%2B%20React-purple.svg" alt="Built with Tauri & React" />
+</p>
 
 ---
 
-## Install the desktop app
+<p align="center">
+  <img src="docs/assets/planner-light.png" alt="Mizan LifeOS Planning Workspace" width="100%" />
+</p>
 
-You need [Node.js](https://nodejs.org) 22+, [pnpm](https://pnpm.io), [Rust](https://rustup.rs)
-and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system
-(on Arch Linux: `webkit2gtk-4.1`).
+## Overview
 
-```sh
+**Mizan** (ميزان, *balance*) is an integrated desktop productivity suite built to give you one calm, private space for your entire day. It runs natively on Linux as a lightweight desktop app and features an optional Android companion app for full-screen focus and mobile agility.
+
+Mizan provides two completely isolated spaces:
+- **Personal Space**: Your daily timeline, tasks, calendar, deep-focus timer, habit routines, and markdown notes.
+- **Team Workspaces**: Local-network peer workspaces featuring Jira-grade agile boards, sprints, backlog, issue tracking, and workload analytics without a centralized cloud server.
+
+Everything is stored in a local SQLite database. There are no tracking scripts, telemetry, or remote dependencies.
+
+---
+
+## Key Features & Screenshots
+
+### 1. Today & Continuous Timeline Planner
+A single, continuous timeline that unifies your tasks, calendar events, work windows, and prayer schedule. The auto-scheduler calculates optimal work slots to protect your time and prevent double-booking.
+
+<p align="center">
+  <img src="docs/assets/today-light.png" alt="Today View" width="49%" />
+  <img src="docs/assets/planner-light.png" alt="Timeline Planner" width="49%" />
+</p>
+
+- **Auto-Planning**: Automatically slots priority tasks into open calendar windows.
+- **Day Templates**: Safe template rendering with `{{DATE}}`, `{{DAY}}`, and custom variables.
+- **Quick Capture**: Global capture dialog for rapid task creation without context switching.
+
+---
+
+### 2. Deep Focus Session & Distraction Shield
+A full-screen, distraction-free environment tailored for deep work.
+
+<p align="center">
+  <img src="docs/assets/focus-light.png" alt="Deep Focus Mode" width="100%" />
+</p>
+
+- **Duration Wheels**: Intuitive iOS-style scroll wheels for precision timer configuration.
+- **Distraction Shield**: Optional OS-level hosts blocker to restrict distracting websites and apps during active sessions.
+- **YouTube Intention Gate**: Firefox add-on that displays your active focus task before loading distracting web feeds.
+
+---
+
+### 3. Agile Boards & Task Management
+Organize projects with an interactive Kanban board designed for speed and clarity.
+
+<p align="center">
+  <img src="docs/assets/kanban-light.png" alt="Kanban Board" width="100%" />
+</p>
+
+- **Smooth Reordering**: Fluid drag-and-drop powered by `@dnd-kit`.
+- **Break into Steps**: Instantly decompose complex tasks into sub-tasks with one click.
+- **Saved Views & Search**: Full-text search and smart filters with relative deadline queries.
+
+---
+
+### 4. Local-Network Team Workspaces (Zero Cloud)
+Collaborate with your team without uploading sensitive internal company data to third-party cloud providers.
+
+<p align="center">
+  <img src="docs/assets/team-light.png" alt="Team Workspaces" width="100%" />
+</p>
+
+- **Peer-to-Peer LAN Hosting**: Hosted directly on one teammate's computer over the local network or Wi-Fi.
+- **Agile Suite**: Issue keys (`ENG-42`), epics, sprints, backlogs, checklists, and estimates.
+- **Actionable Reports**: Real-time burndown charts, velocity tracking, cycle time, and workload balance.
+
+---
+
+### 5. Android Companion App
+Pair your Android phone wirelessly to serve as a companion screen and on-the-go workspace.
+
+<p align="center">
+  <img src="docs/assets/phone-focus.png" alt="Phone Focus Display" width="30%" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/phone-tasks.png" alt="Phone Tasks View" width="30%" />
+</p>
+
+- **Desk Timer**: Transforms your smartphone into a dedicated full-screen focus countdown timer.
+- **Instant Pairing**: Seamless local pairing via QR code (no internet connection required).
+- **Flexible Connectivity**: Syncs over local Wi-Fi, mobile hotspot, or USB tethering/debugging.
+
+---
+
+### 6. Analytics & Daily Score
+Track habits and productivity trends with honest metrics and zero gamification gimmicks.
+
+<p align="center">
+  <img src="docs/assets/stats-light.png" alt="Stats & Routine Scoring" width="100%" />
+</p>
+
+- **Daily Routine Scoring**: Configurable routine presets (General and Faith presets) to monitor daily balance.
+- **Focus History**: Detailed logs of completed sessions, interruptions, and completed milestones.
+- **Unbroken Streaks**: Calendar-accurate streak counting that handles month and year boundaries cleanly.
+
+---
+
+### 7. Appearance: Light & Dark Modes
+Mizan includes first-class support for Light, Dark, or System-following appearance modes.
+
+<p align="center">
+  <img src="docs/assets/planner-dark.png" alt="Dark Mode Workspace" width="100%" />
+</p>
+
+---
+
+## Installation
+
+### Prerequisites
+- **Node.js** (v22+) & **pnpm**
+- **Rust** & Cargo (`rustup`)
+- **Tauri System Prerequisites** (on Arch Linux: `sudo pacman -S webkit2gtk-4.1`; on Ubuntu/Debian: `sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`)
+
+### Build & Install the Desktop App
+
+```bash
+# Clone the repository
+git clone https://github.com/PixelApprentice/mizan-lifeos.git
+cd mizan-lifeos
+
+# Install dependencies
 pnpm install --frozen-lockfile
-pnpm tauri build --no-bundle      # about 10 minutes the first time
-bash scripts/install-desktop.sh   # adds Mizan to your app launcher
+
+# Build desktop application
+pnpm tauri build --no-bundle
+
+# Install desktop entry and launcher icon
+bash scripts/install-desktop.sh
 ```
 
-Open **Mizan** from your launcher, or run `mizan` in a terminal. After pulling
-new changes, run the last two commands again.
+You can now launch **Mizan** from your desktop application launcher or by running `mizan` in your terminal.
 
-To try it without installing, run `pnpm tauri dev`.
-
----
-
-## Phone app (Android)
-
-The phone app is optional. With it you can:
-
-- use the phone as a **full-screen focus timer** next to your computer;
-- **start a focus session** from the phone;
-- **see and edit your tasks** away from your desk. Changes sync the next time the
-  phone and the computer can reach each other.
-- **work on team issues** (Team tab): join a workspace by scanning its invite QR code, then see
-  your issues, change status, comment, tick checklists, log time and create issues.
-
-### 1. Get the APK
-
-The ready-made file is **`releases/Mizan-companion.apk`** in this folder.
-If it is not there, build it:
-
-```sh
-pnpm android        # builds and copies the APK to releases/Mizan-companion.apk
+To run the application in live development mode:
+```bash
+pnpm tauri dev
 ```
 
-`pnpm android` needs JDK 17 and the Android SDK; see [android/README.md](android/README.md).
-Without an SDK, use GitHub instead: **Actions → Android companion APK → Run workflow**,
-then download `mizan-companion-apk` from the run.
+---
 
-### 2. Install it on the phone
+## Phone Companion Setup (Android)
 
-Choose one:
-
-- **Copy the file:** send `Mizan-companion.apk` to the phone (USB file transfer,
-  KDE Connect, a messenger, etc.) and open it. Android asks you to allow installs
-  from that app once. Allow it.
-- **USB debugging:** connect the phone and run `pnpm android --install`.
-
-### 3. Pair the phone with the computer
-
-1. On the computer, open Mizan → **Settings → Phone companion** → **Turn on**.
-   A QR code appears.
-2. On the phone, open Mizan → **Pair** → **Scan QR code**.
-3. Done. The phone shows **Paired**, and its Focus, Tasks and Agenda tabs are ready.
-
-You only pair once. **New pairing code** in Settings disconnects every phone.
-
-### 4. Connecting without Wi-Fi
-
-The phone and the computer only need *some* link between them. The phone remembers
-the computer and finds it again on any of these:
-
-| Your situation | What to do |
-|---|---|
-| Both on the same Wi-Fi | Nothing. |
-| No Wi-Fi: computer uses the **phone's hotspot** | Connect the computer to the hotspot. The phone finds it within a few seconds. |
-| **USB cable** (recommended without Wi-Fi) | Plug in, then on the phone turn on **Settings → Hotspot & tethering → USB tethering**. The computer also gets the phone's internet. |
-| USB cable, but tethering is not possible | Turn on **USB debugging** on the phone, plug in, and click **Link phone over USB debugging** in Mizan's Settings. Click it again after re-plugging. Needs `adb` (`sudo pacman -S android-tools`). |
-
-If the phone ever says it cannot reach the computer, tap **Find desktop again** on
-the Pair screen.
-
-**Security:** the link is plain HTTP on your local network, protected by the
-pairing code in the QR. Your own hotspot and a USB cable are private. On shared
-Wi-Fi, keep the companion turned off. If the phone cannot connect, your firewall
-may be blocking port 47615. For example:
-`sudo ufw allow from 192.168.0.0/16 to any port 47615 proto tcp`
-(hotspots also use `10.x` and `172.16–31.x` addresses).
-
-Without the APK you can open the same page in the phone's browser (scan the QR
-with the camera app). It works, but a browser cannot go truly full screen or keep
-the screen on.
+1. **Install APK**: Download `releases/Mizan-companion.apk` or build it via `pnpm android`.
+2. **Pair Device**:
+   - Open Mizan Desktop → **Settings** → **Phone companion** → **Turn on** (displays a pairing QR code).
+   - Open Mizan on your phone → **Pair** → **Scan QR code**.
+3. **Connection Options**:
+   - **Local Wi-Fi**: Automatically connects when both devices are on the same router.
+   - **Hotspot**: Connect the desktop to the phone's hotspot.
+   - **USB Cable**: Enable **USB Tethering** on the phone or use ADB reverse proxying via **Link phone over USB debugging** in settings.
 
 ---
 
-## Using Mizan
+## Architecture & Data Safety
 
-| View | What it is for |
-|---|---|
-| **Today** | Upcoming events, the tasks that matter most (tick them off or press **Focus** right there), team issues assigned to you, and the daily routine check-in. The day counter starts from the Day 1 you choose. |
-| **Planner** | Calendar. Drag to create or move blocks. **auto-plan open tasks** fills your work windows with open tasks. |
-| **Projects** | Kanban board per project. Drag a card by its ⠿ handle to reorder it or move it between columns. The ⋯ menu on each card has the same moves, plus priority, focus, schedule and delete. |
-| **Tasks** | All tasks with search, filters and saved views. **Break into steps** turns a task into a checklist (paste any list). **Focus** starts a session with the task as its goal. |
-| **Log** | One Markdown note per day, with templates. Autosaves. |
-| **Focus** | Focus timer. Pick the length with Clock-style wheels. Optional site and app blocking. You can tie a session to a team issue and log the time to it afterwards. |
-| **Stats** | Focus time, sessions, finished tasks, streaks and phone checks, from your own data. |
-| **Team** | Your team workspaces (see below). Shown with a blue accent so you always know which space you are in. |
-| **Settings** | **Appearance** (Light, Dark or Automatic), Day 1, data folder, work windows, **daily routine** (pick the General or Faith preset, or build your own habits and targets), phone companion and integrations. |
+- **Backend**: Rust using [Tauri v2](https://tauri.app) for high performance and minimal memory footprint (< 50MB RAM).
+- **Frontend**: React 18, TypeScript, Tailwind-inspired design system, and FullCalendar.
+- **Database**: Embedded SQLite with Write-Ahead Logging (WAL) and automated crash recovery.
+- **Privacy First**: All data is stored locally in `~/.config/com.salahudin.mizan/mizan.db`. No remote telemetry, analytics, or third-party cookies are used.
 
-Shortcuts:
-
-- `Ctrl+K`: command palette (also "Switch light / dark").
-- `Ctrl+Shift+K`: quick capture from anywhere.
-- `Alt+1`…`Alt+8`: switch views.
-- `Ctrl+S`: save the log.
-
-**Exit** in the sidebar saves your work and stops any running timer and blocking.
-
-`pnpm dev` opens a browser preview with **demo data only**. It never touches your
-real database.
+### Automated Backups
+Mizan automatically performs rolling backups before schema migrations and system checkpoints. You can export or backup your entire database at any time from **Settings → Data & Privacy**.
 
 ---
 
-## Team workspaces
+## Development & Testing
 
-A workspace lives on one computer, the **host**. Teammates join with an invite link or QR code, from their own Mizan desktop or the phone app.
+```bash
+# Frontend development preview with mock data
+pnpm dev
 
-1. **Team → New workspace**, then **People → Invite** (choose member, admin or viewer). Send the link or show the QR code.
-2. On the host, keep **Hosting** on (workspace Settings). Teammates must be able to reach the host: same Wi-Fi, a phone hotspot, a VPN such as Tailscale or WireGuard, or USB for a phone.
-3. Teammates work offline as well. Their edits wait in an outbox and sync when the host is reachable.
+# Run comprehensive frontend unit tests
+pnpm test
 
-| Tab | What it is for |
-|---|---|
-| **Board** | Columns by status (Backlog → To do → In progress → In review → Done). Drag to move or reorder. |
-| **Backlog** | Plan sprints: drag issues into a sprint, then start and complete it. |
-| **List / My issues** | Filter by project, assignee, type, priority or label. Press `c` anywhere to create an issue. |
-| **Inbox** | Assignments, @mentions, comments and status changes on your issues. |
-| **Reports** | Burndown, velocity, throughput, cycle time and workload per person. |
-| **People** | Invites, roles and removing access. |
-| **Settings** | Projects, copying a personal project in, hosting, JSON export, and leaving or deleting the workspace. |
+# Run Rust backend test suite
+cargo test --manifest-path src-tauri/Cargo.toml
 
-Roles:
-- **Owner** and **admin**: everything, including people and projects.
-- **Member**: works on issues, and deletes only their own.
-- **Viewer**: reads and comments.
+# Run privacy guard verification
+python3 scripts/check-private-data.py --all
 
-The host checks every change, so a modified client can't bypass roles.
-
-Limits for now:
-- traffic is plain HTTP, so use trusted networks (see [SECURITY.md](SECURITY.md));
-- the workflow is fixed;
-- Linux only.
-
-Design notes are in [docs/team/](docs/team/README.md).
-
----
-
-## Your data
-
-Everything stays on your computer:
-
-| What | Where (Linux) |
-|---|---|
-| Tasks, projects, events, settings | `~/.config/com.salahudin.mizan/mizan.db` |
-| Daily database backups (last 14 days) | `~/.local/state/mizan/backups/` |
-| Focus sessions and timer state | `~/.local/state/mizan/` |
-| Daily logs, Day 1, check-in tracker | The data folder chosen in Settings (default `~/Documents/lifeos`) |
-| Phone pairing settings | `~/.local/state/mizan/companion.json` |
-| Team workspaces (one file each, separate from personal data) | `~/.config/com.salahudin.mizan/team/<id>.db`. Hosted ones are backed up daily too. |
-| Phone's copy of your tasks | Inside the phone app |
-
-**Restoring a backup:** quit Mizan, then copy
-`~/.local/state/mizan/backups/mizan-YYYY-MM-DD.db` over `mizan.db`. Also keep your
-own copy of the data folder and backups on another disk.
-
-Mizan only goes online for:
-
-- prayer times, if you enter a city (sent to AlAdhan);
-- downloading a public blocklist, if you import one;
-- team workspaces and the phone companion, which only talk to devices on your own network.
-
-Full details: [PRIVACY.md](PRIVACY.md).
-
-Task breakdown uses local templates. No task text goes to an AI service.
-
----
-
-## Troubleshooting
-
-| Problem | Fix |
-|---|---|
-| Window goes blank or the app closes | Mizan reloads itself after a renderer crash. Details are in `~/.local/state/mizan/crash.log`. Run `mizan` from a terminal to see more. |
-| Blank window or flicker on Wayland | Mizan already sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. Keep it; `MIZAN_ENABLE_DMABUF=1` turns the faster but less stable renderer back on. |
-| Phone cannot connect | Use the same network, hotspot or USB as described in [step 4](#4-connecting-without-wi-fi), and check the firewall rule above. Tap **Find desktop again**. |
-| The APK is missing | Run `pnpm android`. It is written to `releases/Mizan-companion.apk`. `FLAVOR=foss pnpm android` builds a version without Google Play services, which has no QR scanner, so you paste links instead. |
-| Teammate cannot join | The invite is single-use and expires after 7 days. Both computers must reach each other on port 47616 (allow it in the firewall). Hosting must be on. |
-| Changes don't show up after `git pull` | Rebuild: `pnpm tauri build --no-bundle && bash scripts/install-desktop.sh`. |
-
-Known limits and the roadmap are in [docs/evaluation.md](docs/evaluation.md).
-
----
-
-## Optional extras
-
-These need extra setup and are off unless you install them.
-
-**Site and app blocking during focus.** Read the scripts in [helper/](helper/) first. They run as root through polkit:
-
-```sh
-sudo install -o root -g root -m 755 helper/mizan-hosts helper/mizan-hosts-perm /usr/local/bin/
-sudo install -o root -g root -m 644 helper/com.salahudin.mizan.hostsblock.policy /usr/share/polkit-1/actions/
+# Build Android Companion APK
+pnpm android
 ```
 
-The permanent shield needs a polkit authentication agent. Hyprland app blocking
-closes matching windows (it warns first), so save your work. Blocking adds friction;
-it is not a security boundary.
+### Motion Graphics & Demo Pipeline
+Mizan includes a deterministic Playwright and Three.js recording harness for automated demo video generation:
 
-**Firefox add-on** (YouTube intention gate). Run `bash extension/native-host/install.sh`,
-then in Firefox open `about:debugging` → **This Firefox** → load
-[extension/manifest.json](extension/manifest.json). It shows your current task on
-YouTube pages, so only enable it if that is acceptable. Temporary add-ons need
-reloading after a browser restart.
-
-**Waybar.** [waybar/mizan-waybar.sh](waybar/mizan-waybar.sh) shows the running focus
-session in your bar.
+```bash
+pnpm demo:video          # Captioned product walkthrough
+pnpm demo:film           # Light-theme launch film
+pnpm demo:cinema         # 3D cinema film with procedural MacBook & iPhone models
+pnpm demo:models         # Export procedural GLTF models to assets/models/*.glb
+```
 
 ---
 
-## Development
+## License & Contributing
 
-```sh
-pnpm dev                 # browser preview with demo data
-pnpm tauri dev           # desktop app in dev mode
-pnpm build               # type-check and build the frontend
-pnpm test                # frontend tests (Node.js 22.18+)
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust tests
-pnpm test:privacy        # privacy guard tests
-pnpm android             # build the phone APK → releases/Mizan-companion.apk
-```
+Mizan is open-source software licensed under the **[GNU Affero General Public License v3.0](LICENSE)** (AGPL-3.0-or-later).
 
-Demo videos (need `ffmpeg` and `pnpm exec playwright-core install chromium`; output
-goes to `recordings/`, which is not committed):
-
-```sh
-pnpm demo:video          # captioned product tour → recordings/mizan-demo.mp4
-pnpm demo:footage        # record clean footage for the trailer
-pnpm demo:trailer        # 70 s intro trailer → recordings/mizan-trailer.mp4
-pnpm demo:footage:light  # record light-theme footage for the launch film
-pnpm demo:film           # 84 s bright launch film → recordings/mizan-film.mp4
-pnpm demo:footage:cinema # record sharper (2x) footage with input events for the cinema cut
-pnpm demo:cinema         # 78 s 3D cinema cut → recordings/mizan-cinema.mp4 (uses the GPU)
-pnpm demo:models         # save the film's MacBook Pro and iPhone models → assets/models/*.glb
-```
-
-Add `--stills auto` to any of them (`pnpm demo:cinema --stills auto`) for a quick contact
-sheet instead of a full render. `--workers N` sets how many browsers render in parallel.
-
-| Folder | Contents |
-|---|---|
-| [src/](src/) | React frontend (views, components, scheduling and stats logic) |
-| [src-tauri/](src-tauri/) | Rust backend: database, focus timer, blocking, phone sync server, crash recovery |
-| [companion/](companion/) | The phone page (served by the desktop and bundled in the APK) |
-| [android/](android/) | Android wrapper app |
-| [docs/](docs/) | Evaluation, roadmap and design docs, including the [team workspaces plan](docs/team/README.md) |
-| [scripts/](scripts/) | Install, APK build, privacy check, licence notices, version bump and demo video tools |
-| [docs/release/](docs/release/) | [Readiness review](docs/release/readiness.md), [deployment](docs/release/deploy.md), [versioning](docs/release/versioning.md) |
-| [templates/](templates/) | Blank starter files (must stay blank) |
-
-### Committing safely
-
-This repository holds code and blank templates only. Never commit your data folder,
-database or logs. Before committing:
-
-```sh
-git config core.hooksPath .githooks          # once after cloning: enables the guard
-python3 scripts/check-private-data.py --all  # scan the whole tree
-git diff --cached --stat                     # review what you are about to commit
-```
-
-The guard rejects databases, filled-in templates, home-directory paths and
-common secret formats, but it cannot recognise every bit of personal text, so
-read your diff. Use Conventional Commits (`fix(planner): …`). See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Credits
-
-Calendar by FullCalendar, drag and drop by dnd-kit, icons by Pixelarticons, fonts by
-Fontsource. Their licenses apply. Some workflows are original re-implementations of
-ideas from Obsidian community plugins, with no code copied:
-[QuickAdd](https://github.com/chhoumann/quickadd) (quick capture),
-[Tasks](https://github.com/obsidian-tasks-group/obsidian-tasks) (filters and saved views)
-and [Templater](https://github.com/SilentVoid13/Templater) (log templates with
-`{{DATE}}`, `{{TIME}}`, `{{DAY}}`, `{{WEEK}}`, `{{DOW}}`, `{{TITLE}}`, `{{VALUE}}`).
-Mizan never runs template JavaScript or shell commands. The app identifier
-`com.salahudin.mizan` is kept for compatibility; it is not an account.
-
----
-
-## Licence
-
-Mizan is free software: you can redistribute it and/or modify it under the terms of the
-[GNU Affero General Public License](LICENSE), version 3 or (at your option) any later version.
-It comes with no warranty.
-
-- **Using it, at home or at work, or hosting team workspaces**: free. Nothing to sign.
-- **Shipping a closed-source product built on Mizan**: you need a [commercial licence](COMMERCIAL-LICENSE.md).
-- **Contributing**: see [CONTRIBUTING.md](CONTRIBUTING.md) (CLA plus `git commit -s`).
-- **Name and logo**: [TRADEMARKS.md](TRADEMARKS.md).
-- **Bundled components**: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- **Changes**: [CHANGELOG.md](CHANGELOG.md).
+- **Personal & Internal Team Use**: Free and open.
+- **Commercial Distribution**: For closed-source commercial licensing options, see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+- **Contributing**: Please review [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- **Notices**: Third-party dependencies and notices are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -30,13 +30,15 @@ def git(*args):
 def issues(path, content):
     name = path.name
     is_icon = path.parts[:2] == ("src-tauri", "icons") and path.suffix in {".png", ".ico", ".icns"}
+    # Documentation preview assets and screenshots.
+    is_doc_asset = path.parts[:2] == ("docs", "assets") and path.suffix in {".png", ".webp", ".jpg", ".svg"}
     # Generated device models for the demo film (pnpm demo:models), no personal data.
     is_model = path.parent.as_posix() == "assets/models" and path.suffix == ".glb"
     is_android = path.parts[0] == "android" and (
         path.suffix in {".kt", ".kts", ".xml", ".properties"}
         or path.as_posix() in ANDROID_FILES
     )
-    if path.suffix not in SOURCE_SUFFIXES and path.as_posix() not in EXTENSIONLESS and not is_icon and not is_model and not is_android and path.as_posix() != "templates/tracker.csv":
+    if path.suffix not in SOURCE_SUFFIXES and path.as_posix() not in EXTENSIONLESS and not is_icon and not is_model and not is_android and not is_doc_asset and path.as_posix() != "templates/tracker.csv":
         yield "not an approved source/template file type"
     if path.as_posix() == "templates/tracker.csv":
         if len(content.decode("utf-8").splitlines()) != 1 or not content.startswith(b"date,day,"):
